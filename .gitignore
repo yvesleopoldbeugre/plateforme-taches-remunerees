@@ -1,0 +1,12 @@
+# Node (docs generation tooling)
+docs/sources/node_modules/
+docs/sources/*.svg
+docs/sources/test.png
+
+# OS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.iml
