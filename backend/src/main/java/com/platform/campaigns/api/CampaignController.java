@@ -78,9 +78,9 @@ public class CampaignController {
     }
 
     /**
-     * ⚠ Statut uniquement — ne vérifie pas encore le solde de l'organisation (BR-010), cf.
-     * {@link Campaign#publish()}. Réservé aux rôles plateforme en attendant le module admin
-     * (Phase 9) ; la réservation budgétaire réelle arrive avec le module wallet (Phase 7).
+     * BR-010 is now enforced for real: {@code CampaignService#publish} reserves the budget on the
+     * organization's wallet and throws {@code INSUFFICIENT_BALANCE} (409) if it can't. Réservé
+     * aux rôles plateforme en attendant le module admin (Phase 9).
      */
     @PostMapping("/{campaignId}/publish")
     @PreAuthorize("hasAnyAuthority('ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_OPERATOR')")
@@ -97,6 +97,12 @@ public class CampaignController {
     @PostMapping("/{campaignId}/return-to-draft")
     public CampaignResponse returnToDraft(Authentication authentication, @PathVariable UUID campaignId) {
         return CampaignResponse.of(campaignService.returnToDraft(campaignId, currentUserId(authentication)));
+    }
+
+    /** BR-011 — releases whatever was reserved but never consumed back to the organization's wallet. */
+    @PostMapping("/{campaignId}/cancel")
+    public CampaignResponse cancel(Authentication authentication, @PathVariable UUID campaignId) {
+        return CampaignResponse.of(campaignService.cancel(campaignId, currentUserId(authentication)));
     }
 
     private UUID currentUserId(Authentication authentication) {

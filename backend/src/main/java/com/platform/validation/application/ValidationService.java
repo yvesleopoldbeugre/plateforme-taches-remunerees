@@ -16,6 +16,13 @@ import com.platform.validation.domain.Validation;
 import com.platform.validation.domain.ValidationDecision;
 import com.platform.validation.domain.event.SubmissionApprovedEvent;
 import com.platform.validation.infrastructure.ValidationRepository;
+import com.platform.wallet.application.RewardService;
+import com.platform.wallet.application.WalletService;
+import com.platform.wallet.domain.ReferenceType;
+import com.platform.wallet.domain.Reward;
+import com.platform.wallet.domain.RewardStatus;
+import com.platform.wallet.domain.WalletOwnerType;
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.context.ApplicationEventPublisher;
@@ -27,6 +34,14 @@ import org.springframework.transaction.annotation.Transactional;
  * Application service for validation decisions (UC-11 to UC-13). The roadmap's explicit Phase 6
  * milestone — "un rejet avec motif déclenche un statut cohérent" (DAT §11) — is {@link #decide}
  * with {@code REJECTED}; auto-validation ({@link #attemptAutoValidation}) is the UC-11 half.
+ *
+ * <p>Since Phase 7, an approval also settles the money synchronously, in the same transaction as
+ * the decision (see {@link #applyDecision}): the {@link Reward} is created and the user's wallet
+ * credited directly here (not via a listener on the {@code wallet} side), so that the whole
+ * decision — participation status, campaign {@code budget_consumed}, the reward, the ledger — is
+ * one atomic unit. {@code wallet} stays a dependency-free noyau (DAT §8.1): {@code validation}
+ * depends on it, never the other way around. {@link SubmissionApprovedEvent} is still published
+ * afterwards, purely as information for other, non-critical consumers (e.g. notifications).
  */
 @Service
 public class ValidationService {
@@ -37,12 +52,15 @@ public class ValidationService {
     private final TaskService taskService;
     private final CampaignService campaignService;
     private final OrganizationService organizationService;
+    private final RewardService rewardService;
+    private final WalletService walletService;
     private final AutoValidationRuleEvaluator ruleEvaluator;
     private final ApplicationEventPublisher eventPublisher;
 
     public ValidationService(ValidationRepository validationRepository, SubmissionService submissionService,
                               ParticipationService participationService, TaskService taskService,
                               CampaignService campaignService, OrganizationService organizationService,
+                              RewardService rewardService, WalletService walletService,
                               AutoValidationRuleEvaluator ruleEvaluator, ApplicationEventPublisher eventPublisher) {
         this.validationRepository = validationRepository;
         this.submissionService = submissionService;
@@ -50,6 +68,8 @@ public class ValidationService {
         this.taskService = taskService;
         this.campaignService = campaignService;
         this.organizationService = organizationService;
+        this.rewardService = rewardService;
+        this.walletService = walletService;
         this.ruleEvaluator = ruleEvaluator;
         this.eventPublisher = eventPublisher;
     }
@@ -97,12 +117,33 @@ public class ValidationService {
         switch (decision) {
             case APPROVED, AUTO_APPROVED -> {
                 participationService.approve(participation.getId());
+                campaignService.recordBudgetConsumption(campaign.getId(), task.getRewardAmount());
+                settleReward(participation.getId(), participation.getUserId(), campaign, task.getRewardAmount());
                 eventPublisher.publishEvent(new SubmissionApprovedEvent(
-                        participation.getId(), task.getId(), participation.getUserId(),
-                        task.getRewardAmount(), campaign.getCurrency()));
+                        participation.getId(), task.getId(), campaign.getId(), campaign.getOrganizationId(),
+                        participation.getUserId(), task.getRewardAmount(), campaign.getCurrency()));
             }
             case REJECTED -> participationService.reject(participation.getId());
             case CORRECTION_REQUESTED -> participationService.requestCorrection(participation.getId());
         }
+    }
+
+    /**
+     * BR-030 — moves the reward amount from the organization's reserved budget into the user's
+     * available balance. Idempotent against a retried decision: {@code createPending} returns
+     * the existing {@link Reward} if this participation was already settled, and the wallet
+     * calls are skipped once that reward is no longer {@code PENDING} (both wallet operations
+     * are themselves idempotent on their own key, but skipping avoids even attempting them twice).
+     */
+    private void settleReward(UUID participationId, UUID userId, Campaign campaign, BigDecimal rewardAmount) {
+        Reward reward = rewardService.createPending(participationId, rewardAmount, campaign.getCurrency());
+        if (reward.getStatus() != RewardStatus.PENDING) {
+            return;
+        }
+        walletService.consumeReserved(WalletOwnerType.ORGANIZATION, campaign.getOrganizationId(), rewardAmount,
+                ReferenceType.CAMPAIGN_BUDGET, campaign.getId(), "reward-consume:" + participationId);
+        walletService.credit(WalletOwnerType.USER, userId, rewardAmount,
+                ReferenceType.REWARD, participationId, "reward-credit:" + participationId);
+        rewardService.markCredited(reward.getId());
     }
 }

@@ -115,10 +115,9 @@ public class Campaign {
     }
 
     /**
-     * ⚠ Ne vérifie pas encore BR-010 (budget_total ≤ solde disponible de l'organisation) : cette
-     * vérification et la réservation réelle sur le wallet seront ajoutées en Phase 7, quand le
-     * module wallet existera. Pour l'instant, publier ne fait que changer le statut et marquer
-     * le budget comme réservé pour la comptabilité de la campagne elle-même.
+     * BR-010 (budget_total ≤ solde disponible de l'organisation) is enforced by
+     * {@code CampaignService#publish} via {@code WalletService#reserve} *before* this is called
+     * — this method only records that the reservation already happened.
      */
     public void publish() {
         assertPendingReview();
@@ -140,6 +139,37 @@ public class Campaign {
                     "Seule une campagne rejetée peut repasser en brouillon (statut actuel : " + status + ").");
         }
         this.status = CampaignStatus.DRAFT;
+        this.updatedAt = Instant.now();
+    }
+
+    /**
+     * BR-030 (bookkeeping side) — called when a submission under this campaign is approved: the
+     * reward amount moves from "reserved" to "consumed". Does not touch the wallet itself (that
+     * is {@code WalletService#consumeReserved}, driven by the same approval) — this is purely the
+     * campaign's own budget view.
+     */
+    public void consumeBudget(BigDecimal amount) {
+        this.budgetConsumed = this.budgetConsumed.add(amount);
+        this.updatedAt = Instant.now();
+    }
+
+    /** The unconsumed portion of what was reserved — what {@code cancel()} returns to the wallet. */
+    public BigDecimal unconsumedReservedBudget() {
+        return budgetReserved.subtract(budgetConsumed);
+    }
+
+    /**
+     * BR-011 — cancellation is allowed from any pre-terminal status; a campaign that was never
+     * published (still DRAFT/PENDING_REVIEW) has nothing reserved to release. Campaigns already
+     * COMPLETED/EXPIRED/CANCELLED/REJECTED are terminal and cannot be cancelled again.
+     */
+    public void cancel() {
+        if (status == CampaignStatus.COMPLETED || status == CampaignStatus.EXPIRED
+                || status == CampaignStatus.CANCELLED || status == CampaignStatus.REJECTED) {
+            throw new ConflictException("CAMPAIGN_NOT_CANCELLABLE",
+                    "Cette campagne ne peut plus être annulée (statut actuel : " + status + ").");
+        }
+        this.status = CampaignStatus.CANCELLED;
         this.updatedAt = Instant.now();
     }
 

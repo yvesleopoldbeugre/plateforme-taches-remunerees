@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 6 — Validation
+## État actuel : Phase 7 — Wallet et ledger
 
 Phase 1 (architecture et base technique) :
 
@@ -131,11 +131,11 @@ Modules `participations` (`TaskParticipation`, `ParticipationService`) et `submi
 Correctif transverse : `AuthorizationDeniedException` (levée par `@PreAuthorize` en cas de
 refus) renvoyait 500 au lieu de 403 — `GlobalExceptionHandler` la gère maintenant.
 
-Explicitement reporté : la vérification de solde BR-010 sur `publish` (Phase 7) ; bootstrap
-d'un premier compte `PLATFORM_ADMIN` ; `IN_PROGRESS` reste un statut inutilisé (le flux va de
-`RESERVED` à `SUBMITTED` directement, comme sur le diagramme de séquence du dossier) ;
-passage `FULL → PUBLISHED` d'une campagne à la libération d'une place (US-039, priorité
-SHOULD).
+Explicitement reporté à l'époque : la vérification de solde BR-010 sur `publish` — soldée en
+Phase 7, voir plus bas. Toujours reporté : bootstrap d'un premier compte `PLATFORM_ADMIN` ;
+`IN_PROGRESS` reste un statut inutilisé (le flux va de `RESERVED` à `SUBMITTED` directement,
+comme sur le diagramme de séquence du dossier) ; passage `FULL → PUBLISHED` d'une campagne à la
+libération d'une place (US-039, priorité SHOULD).
 
 Phase 6 (validation) — module `validation` (`Validation`, `ValidationService`) — UC-11 à UC-13 :
 
@@ -161,12 +161,88 @@ Phase 6 (validation) — module `validation` (`Validation`, `ValidationService`)
 - `TaskParticipation` gagne `approve()`/`reject()`/`requestCorrection()`, tous les trois ne
   partant que de `UNDER_REVIEW` — une seconde décision sur une soumission déjà tranchée
   échoue proprement (409).
-- `SubmissionApprovedEvent` publié sur toute approbation (manuelle ou auto) : la validation ne
-  touche jamais à l'argent (DAT §8.2) — c'est au module `wallet` (Phase 7) de l'écouter pour
-  créer la `Reward` et créditer le portefeuille.
+- `SubmissionApprovedEvent` publié sur toute approbation (manuelle ou auto) — voir Phase 7 :
+  l'argent n'est en fait plus réglé par un listener sur cet événement, mais synchronement par
+  `ValidationService` lui-même ; l'événement reste publié, maintenant purement informatif pour
+  d'éventuels consommateurs non critiques (notifications, Phase 9+).
 
-Pas encore implémenté (phases suivantes, DAT §11) : litiges, wallet/ledger, paiements,
-anti-fraude.
+Phase 7 (wallet et ledger) — module `wallet` (`Wallet`, `WalletTransaction`, `Reward`,
+`WalletService`, `RewardService`) — DAT §4.2/§25, UC du wallet :
+
+- `wallet` reste le **noyau** annoncé dans son `package-info` depuis la Phase 1 : zéro
+  dépendance vers un autre module métier. Concrètement, cela a dicté deux choix :
+  - Un wallet est créé *à la volée* (`WalletService#getOrCreateWallet`) au premier usage, pas
+    par un événement `OrganizationCreated`/`UserCreated` — `wallets.owner_id` n'a d'ailleurs pas
+    de FK vers `users`/`organizations` (association polymorphe, déjà dans la V1).
+  - Le règlement de l'argent à une approbation (créer la `Reward`, créditer l'utilisateur,
+    libérer le budget réservé de l'organisation) n'est **pas** fait par un listener côté
+    `wallet` sur `SubmissionApprovedEvent` (ce qui aurait forcé `wallet` à importer un type du
+    module `validation`, même juste l'événement) : c'est `ValidationService#applyDecision` qui
+    appelle directement `WalletService`/`RewardService`, dans la même transaction que la
+    décision elle-même. `campaigns` et `validation` dépendent de `wallet`, jamais l'inverse.
+- Chaque opération (`credit`, `reserve`, `release`, `consumeReserved`) est une seule mise à jour
+  SQL conditionnelle (`WalletRepository`, même famille de pattern que `tryReserveSlot` en Phase
+  5), jamais lecture-puis-écriture, et prend une clé d'idempotence : une clé déjà vue est un
+  succès silencieux (pas une erreur) — c'est la sémantique attendue d'un retry après crash ou
+  d'un événement redélivré. Une vraie collision concurrente sur la même clé est le cas rare,
+  renvoyé en `IDEMPOTENCY_KEY_CONFLICT` par l'index unique de `wallet_transactions`.
+- **Piège Hibernate rencontré et corrigé** (à documenter car non évident) : après une mise à
+  jour SQL en bloc (`@Modifying`), relire l'entité par `findById` dans la *même* transaction
+  renvoie l'instance encore en cache du contexte de persistance, donc les anciennes valeurs —
+  pas celles qu'on vient d'écrire. Le premier correctif essayé (`clearAutomatically = true`)
+  réglait ça mais vidait *tout* le contexte de persistance, détachant silencieusement les
+  entités chargées plus tôt dans la même transaction par l'appelant (ex. `Campaign` dans
+  `CampaignService#publish`) — leurs changements ultérieurs (`campaign.publish()`) n'étaient
+  alors plus jamais flushés, même si la réponse HTTP semblait correcte. Corrigé en appliquant le
+  même delta en mémoire sur l'instance déjà chargée (`Wallet#applyCredit/applyReserve/...`) puis
+  en détachant *uniquement* cette entité (`WalletService#applyAndDetach`), sans toucher au
+  contexte des autres entités de la transaction. Détecté par un test manuel (relire la campagne
+  juste après `publish`, pas seulement regarder la réponse du POST) — pas par les tests
+  automatisés, qui ne rechargeaient jamais l'entité dans la même transaction.
+- BR-010, enfin vérifiée pour de vrai : `CampaignService#publish` appelle
+  `WalletService#reserve` (available → reserved sur le wallet de l'organisation) *avant* la
+  transition de statut ; insuffisance de solde ⇒ `INSUFFICIENT_BALANCE` (409), aucune mutation.
+  Dette documentée depuis la Phase 5, soldée ici.
+- BR-011 (annulation) : `Campaign#cancel()` (nouvelle transition, DRAFT/PENDING_REVIEW/
+  PUBLISHED/PAUSED → CANCELLED) et `CampaignService#cancel` libèrent la part réservée jamais
+  consommée (`budget_reserved - budget_consumed`) vers le wallet de l'organisation.
+- BR-030 (règlement d'une récompense) : à l'approbation, `ValidationService` incrémente
+  `campaigns.budget_consumed` (vue propre à la campagne) *et* appelle
+  `WalletService#consumeReserved` sur le wallet de l'organisation (vue wallet, qui peut couvrir
+  plusieurs campagnes) — deux comptabilités densément liées mais distinctes, délibérément :
+  `wallet` ne sait rien de ce qu'est une « campagne ». `RewardService#createPending` est
+  idempotent (une seule `Reward` par `participation_id`, contrainte unique de la V1) ; la
+  récompense n'est marquée `CREDITED` qu'après le crédit effectif du wallet utilisateur, et un
+  replay (événement redélivré) qui retombe sur une `Reward` déjà `CREDITED` ne retouche pas le
+  wallet une seconde fois.
+- Dépôt simulé — `POST /api/v1/organizations/{id}/wallet/deposit` crédite directement le wallet
+  d'une organisation, sans passer par la table `payments` ni aucun provider : un strict
+  bouche-trou pour pouvoir publier une campagne contre un vrai solde avant que Phase 8
+  (paiements et retraits) construise la vraie abstraction `PaymentProvider` (H5 du CDCF) avec un
+  adaptateur manuel/simulé puis de vrais providers derrière.
+- **Testé par `WalletLedgerInvariantTest`** (le critère de validation explicite de cette phase,
+  "Invariant solde = somme ledger vérifié par test", DAT §11) :
+  `WalletService#reconstructBalances` rejoue tout le ledger d'un wallet depuis zéro et
+  recalcule `available_balance`/`reserved_balance` ; les 4 tests vérifient que ce calcul
+  retombe exactement sur les valeurs vivantes après dépôt/réservation/libération/consommation,
+  après un dépassement de solde refusé, après un retry sur la même clé d'idempotence, et sous
+  100 réservations concurrentes sur un solde ne permettant que 10 succès (même famille de
+  preuve que `ParticipationConcurrencyTest` en Phase 5, appliquée à BR-010).
+- `GET /api/v1/wallet/me(/transactions)`,
+  `GET /api/v1/organizations/{id}/wallet(/transactions)` (membre actif requis),
+  `POST /api/v1/organizations/{id}/wallet/deposit` (`OWNER`/`MANAGER`),
+  `POST /api/v1/campaigns/{id}/cancel`.
+
+Explicitement reporté : la vraie abstraction `PaymentProvider` et la table `payments`/
+`payment_methods` (Phase 8) ; les retraits utilisateur (`withdrawals`, Phase 8) ; les types de
+transaction `DEBIT`/`FEE`/`REVERSAL`/`ADJUSTMENT` sont définis dans l'enum mais n'ont encore
+aucune méthode de service (frais de retrait Phase 8, corrections admin Phase 9) ; la libération
+du budget réservé non consommé à la complétion/expiration naturelle d'une campagne (seule
+l'annulation explicite le fait pour l'instant — `COMPLETED`/`EXPIRED` n'ont pas encore de
+scheduler dédié, contrairement à `CANCELLED`) ; bootstrap d'un premier compte `PLATFORM_ADMIN`.
+
+Pas encore implémenté (phases suivantes, DAT §11) : litiges, paiements/retraits réels,
+anti-fraude, administration, statistiques.
 
 ## Prérequis
 
