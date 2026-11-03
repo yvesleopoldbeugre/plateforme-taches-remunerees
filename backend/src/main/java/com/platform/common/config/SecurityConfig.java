@@ -1,5 +1,7 @@
 package com.platform.common.config;
 
+import com.platform.auth.infrastructure.JwtAuthenticationFilter;
+import com.platform.common.security.JsonAuthenticationEntryPoint;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -8,25 +10,35 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Security baseline for Phase 1 (architecture skeleton): stateless API, actuator health exposed,
- * everything else requires authentication by default. The {@code auth} module (Phase 2) adds the
- * JWT authentication filter and the concrete authentication provider — see CDCT §8 / DAT §5.
+ * Security baseline: stateless API, actuator health exposed, the pre-authentication {@code auth}
+ * endpoints public, everything else (including the two phone-verification endpoints, which need
+ * to know who is asking) requires a valid JWT — CDCT §8 / DAT §5.
  */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter,
+                                                     JsonAuthenticationEntryPoint authenticationEntryPoint) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
-                        .requestMatchers("/api/v1/auth/**").permitAll()
-                        .anyRequest().authenticated());
+                        .requestMatchers(
+                                "/api/v1/auth/register",
+                                "/api/v1/auth/login",
+                                "/api/v1/auth/refresh",
+                                "/api/v1/auth/logout",
+                                "/api/v1/auth/verify-email",
+                                "/api/v1/auth/verify-email/resend").permitAll()
+                        .anyRequest().authenticated())
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

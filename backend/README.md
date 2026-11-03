@@ -3,28 +3,48 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 1 — Architecture et base technique
+## État actuel : Phase 2 — Authentification et utilisateurs
 
-Ce qui est en place :
+Phase 1 (architecture et base technique) :
 
 - Structure modulaire `com.platform.<module>` (`auth`, `users`, `organizations`, `campaigns`,
   `tasks`, `participations`, `submissions`, `validation`, `wallet`, `payments`, `withdrawals`,
   `disputes`, `notifications`, `fraud`, `audit`, `admin`), chacun documenté dans son
   `package-info.java` et conservant les sous-packages `domain` / `application` /
   `infrastructure` / `api` prévus par le DAT.
-- Schéma PostgreSQL complet (19 tables) en migration Flyway (`V1__init_schema.sql`), identique
-  au DDL du DAT §4.
+- Schéma PostgreSQL en migrations Flyway (`V1__init_schema.sql`, 19 tables identiques au DDL
+  du DAT §4 ; `V2__add_platform_role.sql`, cf. ci-dessous).
 - Socle transverse (`common`) : gestion d'erreurs centralisée au format
   `{ "error": { "code", "message", "traceId" } }`, filtre de corrélation (`X-Request-Id` →
-  logs structurés), configuration Spring Security de base (API stateless, `/actuator/health`
-  public, tout le reste authentifié), encodage de mot de passe Argon2id.
+  logs structurés), configuration Spring Security (API stateless, JWT), encodage de mot de
+  passe Argon2id.
 - Health check (`/actuator/health`) et test de contexte contre un vrai PostgreSQL
-  (Testcontainers) qui valide que la migration s'applique sans erreur.
+  (Testcontainers) qui valide que les migrations s'appliquent sans erreur.
 - Conteneurisation : `Dockerfile` multi-stage (build Maven → image `eclipse-temurin:21-jre-alpine`
   non-root, avec `HEALTHCHECK`) et `docker-compose.yml` orchestrant `app` + `postgres` + `redis`.
 
-Pas encore implémenté (phases suivantes de la roadmap, DAT §11) : authentification réelle,
-entités JPA, endpoints métier, event bus applicatif, wallet/ledger, paiements, anti-fraude.
+Phase 2 (authentification et utilisateurs) :
+
+- Modules `users` (entités `User`/`UserProfile`, `UserService`) et `auth` (inscription, login,
+  rafraîchissement/révocation de session, vérification email + téléphone) — US-001 à US-006.
+- JWT access token (15 min, HS256) + refresh token opaque rotatif stocké dans Redis (révocable
+  individuellement au logout) ; aucune donnée de session en base.
+- Vérification email (lien à usage unique, 24h) et téléphone (OTP 6 chiffres, 10 min, 5
+  tentatives max), codes stockés uniquement dans Redis. Le module `notifications` n'existant
+  pas encore, `LoggingVerificationNotifier` journalise le lien/code à la place d'un envoi réel
+  (`docker compose logs app`, ou la console) — à remplacer en Phase 9.
+- `platform_role` (`PLATFORM_ADMIN` / `PLATFORM_OPERATOR`, nullable) ajouté à `users` : la V1
+  n'avait pas prévu de colonne pour ces rôles globaux, distincts des rôles d'organisation.
+- `GET /api/v1/users/me`, `PATCH /api/v1/users/me/profile`.
+- Endpoints : `POST /api/v1/auth/{register,login,refresh,logout,verify-email,
+  verify-email/resend,verify-phone,verify-phone/resend}`.
+
+Explicitement reporté (hors MVP à ce stade) : MFA/TOTP (prévu pour PLATFORM_ADMIN/OPERATOR/
+ORGANIZATION_OWNER, cf. CDCT §8), réinitialisation de mot de passe, révocation de toutes les
+sessions d'un coup, bootstrap d'un premier compte PLATFORM_ADMIN.
+
+Pas encore implémenté (phases suivantes, DAT §11) : organisations, campagnes/tâches,
+participations/soumissions, validation, wallet/ledger, paiements, anti-fraude.
 
 ## Prérequis
 

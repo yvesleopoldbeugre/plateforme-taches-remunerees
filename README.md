@@ -13,7 +13,7 @@ Marketplace de micro-tâches et de campagnes rémunérées (MVP), contexte Afriq
 ## Avancement (roadmap DAT §11)
 
 - [x] Phase 1 — Architecture et base technique
-- [ ] Phase 2 — Authentification et utilisateurs
+- [x] Phase 2 — Authentification et utilisateurs
 - [ ] Phase 3 — Organisations
 - [ ] Phase 4 — Campagnes et tâches
 - [ ] Phase 5 — Participations et soumissions

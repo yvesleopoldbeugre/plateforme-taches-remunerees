@@ -2,6 +2,10 @@ spring:
   application:
     name: plateforme-taches-remunerees
 
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/plateforme_taches}
     username: ${DB_USERNAME:platform}
@@ -26,6 +30,12 @@ spring:
 
 server:
   port: ${SERVER_PORT:8080}
+
+jwt:
+  # Dev-only default — MUST be overridden (32+ bytes, high-entropy) outside local development.
+  secret: ${JWT_SECRET:dev-only-insecure-secret-change-me-please-32bytes-min}
+  access-token-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
+  refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
 
 management:
   endpoints:

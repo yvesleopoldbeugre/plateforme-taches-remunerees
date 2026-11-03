@@ -67,6 +67,14 @@
       <scope>runtime</scope>
     </dependency>
 
+    <!-- Required by Spring Security's Argon2PasswordEncoder at runtime -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.86</version>
+      <scope>runtime</scope>
+    </dependency>
+
     <!-- Database -->
     <dependency>
       <groupId>org.postgresql</groupId>
