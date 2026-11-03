@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 9 — Administration (back-office)
+## État actuel : Phase 10 — Anti-fraude
 
 Phase 1 (architecture et base technique) :
 
@@ -373,14 +373,67 @@ UC-21, US-014 :
   puis accepté après vérification, suspension d'un utilisateur vérifiée en l'empêchant
   réellement de participer, journal d'audit relu après coup).
 
-Explicitement reporté : arbitrage des litiges (UC-15, module `disputes` — orphelin des 11
-phases de la roadmap, n'a pas de phase dédiée ; laissé pour une passe ultérieure) ; détection de
-fraude et escalade automatique (Phase 10) ; KYC documentaire utilisateur (cf. ci-dessus) ;
-capture de l'adresse IP sur les lignes d'audit (`audit_logs.ip_address` existe, mais aucun
-filtre de requête ne la renseigne encore) ; mode audit strict (cf. ci-dessus) ; écran de gestion
-des rôles plateforme au-delà du bootstrap initial.
+Explicitement reporté à l'époque : détection de fraude et escalade automatique — soldé en
+Phase 10, voir plus bas. Toujours reporté : arbitrage des litiges (UC-15, module `disputes` —
+orphelin des 11 phases de la roadmap, n'a pas de phase dédiée ; laissé pour une passe
+ultérieure) ; KYC documentaire utilisateur (cf. ci-dessus) ; capture de l'adresse IP sur les
+lignes d'audit (`audit_logs.ip_address` existe, mais aucun filtre de requête ne la renseigne
+encore) ; mode audit strict (cf. ci-dessus) ; écran de gestion des rôles plateforme au-delà du
+bootstrap initial.
 
-Pas encore implémenté (phases suivantes, DAT §11) : anti-fraude, statistiques.
+Phase 10 (anti-fraude) — module `fraud` (`FraudEvent`, `FraudService`, `FraudEventListener`) —
+UC-22, BR-051 (revisitée), BR-050 (explicitement reportée) :
+
+- **BR-051 revisitée** — c'est le critère de validation explicite de cette phase ("une
+  soumission dupliquée génère un événement", DAT §11). Le dossier de conception dit littéralement
+  "bloque la validation automatique", pas "bloque la soumission" ; la Phase 5 avait implémenté la
+  forme la plus stricte (rejet pur et simple, `DUPLICATE_SUBMISSION_HASH`) faute de module fraude
+  pour faire autrement — documenté comme tel à l'époque, et explicitement revisité maintenant.
+  `SubmissionService#recordSubmission` **n'est plus un 400** : une soumission dont le hash
+  correspond à une soumission antérieure sur la même tâche est désormais **enregistrée** et
+  marquée (`task_submissions.duplicate_of_submission_id`, `V8__add_task_submission_duplicate_
+  marker.sql`) plutôt que rejetée. `ValidationService#attemptAutoValidation` refuse
+  l'auto-approbation sur une soumission marquée, même si ses règles correspondent par ailleurs —
+  la participation retombe simplement en revue manuelle (`UNDER_REVIEW`), jamais en erreur.
+  **Changement de comportement assumé** : les intégrations qui comptaient sur un 422
+  `DUPLICATE_SUBMISSION_HASH` en retour d'une soumission dupliquée doivent être adaptées — elles
+  reçoivent maintenant un 201 normal, avec `duplicateOfSubmissionId` renseigné dans la réponse.
+- `ParticipationService#submit` publie `DuplicateSubmissionDetectedEvent` (porteur de
+  `userId`/`campaignId`, pour que `fraud` — module transverse — n'ait jamais à rappeler
+  `participations`/`campaigns`, même raisonnement que `SubmissionApprovedEvent` en Phase 7) ;
+  `FraudEventListener` écrit la ligne `fraud_events` (`type=DUPLICATE_SUBMISSION`,
+  `risk_level=MEDIUM` — hypothèse explicite, non chiffrée dans le dossier, tranchée ici). Comme
+  `AutoValidationListener`/`AuditLogListener` avant lui, une erreur d'écriture est absorbée, jamais
+  propagée sur le flux de soumission.
+- **UC-22** (file de fraude) : `FraudEvent` a trois décisions — `review` ("escalade", réversible,
+  `PLATFORM_OPERATOR` ou `ADMIN` — le CDCF autorise explicitement l'opérateur à faire une "revue
+  de fraude de premier niveau"), `dismiss` ("classement sans suite", même rôles), `confirm`
+  ("suspension de compte" — **`PLATFORM_ADMIN` seul**, car confirmer un événement suspend
+  réellement l'utilisateur visé via `UserService#suspend` (Phase 9) dans le même appel : ce
+  n'est pas une étape manuelle séparée, confirmer *est* la décision de suspendre. Toute décision
+  après `CONFIRMED`/`DISMISSED` échoue (`FRAUD_EVENT_ALREADY_DECIDED`).
+- `GET /api/v1/fraud-events?status=`, `POST /api/v1/fraud-events/{id}/{review,dismiss,confirm}`.
+- **Testé par `FraudDetectionTest`** (5 cas : soumission dupliquée enregistrée + événement OPEN
+  levé, non-auto-approbation même quand les règles correspondraient, aucun événement sur une
+  soumission non dupliquée [cas de contrôle], `confirm` suspendant réellement l'utilisateur,
+  `review` puis `dismiss` valide mais une seconde décision après coup refusée) — les 31 tests du
+  projet passent. Vérifié aussi par curl en local et dans le conteneur Docker reconstruit (deux
+  comptes soumettent le même contenu sur la même tâche → la deuxième soumission est acceptée
+  avec `duplicateOfSubmissionId` renseigné, pas rejetée → l'événement apparaît dans la file →
+  `confirm` suspend réellement le compte → une nouvelle participation de ce compte échoue en
+  `ACCOUNT_SUSPENDED`).
+
+Explicitement reporté : **BR-050** (appareil associé à plus de N comptes distincts) — aucune
+infrastructure de capture d'empreinte d'appareil n'existe nulle part dans l'API (ni table, ni
+en-tête, ni champ sur l'inscription/connexion) ; construire ce détecteur demanderait une
+migration et un point de capture sur `auth`, bien au-delà du critère de validation explicite de
+cette phase, qui ne porte que sur les soumissions dupliquées. `FraudEventType.MULTI_ACCOUNT_
+DEVICE` est défini dans l'énumération (prêt à être utilisé) mais n'a encore aucun détecteur,
+même logique que les types de transaction `DEBIT`/`FEE`/`REVERSAL`/`ADJUSTMENT` du wallet en
+Phase 7 ; arbitrage des litiges (cf. ci-dessus) ; score de risque agrégé par utilisateur (chaque
+`FraudEvent` reste isolé, pas de cumul pondéré par compte).
+
+Pas encore implémenté (phases suivantes, DAT §11) : statistiques.
 
 ## Prérequis
 

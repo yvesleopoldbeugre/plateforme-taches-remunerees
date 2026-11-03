@@ -8,6 +8,7 @@ import com.platform.common.exception.ConflictException;
 import com.platform.common.exception.NotFoundException;
 import com.platform.participations.domain.ParticipationStatus;
 import com.platform.participations.domain.TaskParticipation;
+import com.platform.participations.domain.event.DuplicateSubmissionDetectedEvent;
 import com.platform.participations.domain.event.ParticipationSubmittedEvent;
 import com.platform.participations.infrastructure.TaskParticipationRepository;
 import com.platform.common.exception.ForbiddenException;
@@ -97,10 +98,16 @@ public class ParticipationService {
                     "Le délai de réservation est dépassé (BR-021).");
         }
 
-        // May throw DUPLICATE_SUBMISSION_HASH (BR-051) — participation stays as-is, resubmission
-        // with different content remains possible.
+        // BR-051 — a duplicate is recorded, not rejected (see SubmissionService#recordSubmission);
+        // it's flagged via submission.isDuplicate() instead.
         TaskSubmission submission = submissionService.recordSubmission(participationId, participation.getTaskId(), content, attachments);
         participation.submit();
+
+        if (submission.isDuplicate()) {
+            Task task = taskService.getTask(participation.getTaskId());
+            eventPublisher.publishEvent(new DuplicateSubmissionDetectedEvent(submission.getId(),
+                    submission.getDuplicateOfSubmissionId(), participationId, task.getId(), task.getCampaignId(), userId));
+        }
 
         // The validation module listens for this to attempt auto-validation (UC-11) — published
         // synchronously, in the same transaction: if it throws, the listener catches it itself

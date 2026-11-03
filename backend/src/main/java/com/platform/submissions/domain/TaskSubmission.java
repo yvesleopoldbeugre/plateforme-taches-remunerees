@@ -38,6 +38,11 @@ public class TaskSubmission {
     @Column
     private String attachments;
 
+    /** BR-051/Phase 10 — set when this submission's content hash matches an earlier one on the
+     *  same task; points at that earlier submission. Null for the common case. */
+    @Column(name = "duplicate_of_submission_id")
+    private UUID duplicateOfSubmissionId;
+
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt = Instant.now();
 
@@ -45,12 +50,14 @@ public class TaskSubmission {
         // JPA
     }
 
-    public TaskSubmission(UUID participationId, UUID taskId, String content, String contentHash, String attachments) {
+    public TaskSubmission(UUID participationId, UUID taskId, String content, String contentHash, String attachments,
+                           UUID duplicateOfSubmissionId) {
         this.participationId = participationId;
         this.taskId = taskId;
         this.content = content;
         this.contentHash = contentHash;
         this.attachments = attachments;
+        this.duplicateOfSubmissionId = duplicateOfSubmissionId;
     }
 
     public UUID getId() {
@@ -75,6 +82,14 @@ public class TaskSubmission {
 
     public String getAttachments() {
         return attachments;
+    }
+
+    public UUID getDuplicateOfSubmissionId() {
+        return duplicateOfSubmissionId;
+    }
+
+    public boolean isDuplicate() {
+        return duplicateOfSubmissionId != null;
     }
 
     public Instant getSubmittedAt() {

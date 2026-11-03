@@ -6,11 +6,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record TaskSubmissionResponse(
-        UUID id, UUID participationId, UUID taskId, Object content, Object attachments, Instant submittedAt
+        UUID id, UUID participationId, UUID taskId, Object content, Object attachments,
+        UUID duplicateOfSubmissionId, Instant submittedAt
 ) {
     public static TaskSubmissionResponse of(TaskSubmission s, ObjectMapper objectMapper) {
         return new TaskSubmissionResponse(s.getId(), s.getParticipationId(), s.getTaskId(),
-                parse(s.getContent(), objectMapper), parse(s.getAttachments(), objectMapper), s.getSubmittedAt());
+                parse(s.getContent(), objectMapper), parse(s.getAttachments(), objectMapper),
+                s.getDuplicateOfSubmissionId(), s.getSubmittedAt());
     }
 
     private static Object parse(String json, ObjectMapper objectMapper) {

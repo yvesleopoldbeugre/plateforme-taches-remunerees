@@ -98,9 +98,17 @@ public class ValidationService {
         return validationRepository.save(new Validation(submissionId, decision, reasonCode, reviewerId, comment));
     }
 
-    /** UC-11 — invoked by {@link AutoValidationListener}, never throws onto the submit flow. */
+    /**
+     * UC-11 — invoked by {@link AutoValidationListener}, never throws onto the submit flow.
+     * BR-051/Phase 10: a submission flagged as a duplicate never auto-validates, matching the
+     * design dossier's literal wording ("bloque la validation automatique") — it still falls
+     * back to manual review, it just never becomes an AUTO_APPROVED shortcut.
+     */
     @Transactional
     public void attemptAutoValidation(UUID submissionId, UUID participationId, UUID taskId, Map<String, Object> content) {
+        if (submissionService.getSubmission(submissionId).isDuplicate()) {
+            return;
+        }
         Task task = taskService.getTask(taskId);
         if (!ruleEvaluator.matches(task.getAutoValidationRules(), content)) {
             return;

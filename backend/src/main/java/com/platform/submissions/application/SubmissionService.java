@@ -11,6 +11,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -32,22 +33,24 @@ public class SubmissionService {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Phase 10 revisits BR-051: the design dossier's own wording is "bloque la validation
+     * automatique", not "bloque la soumission" — Phase 5 rejected duplicates outright because no
+     * fraud module existed yet to raise a signal instead. Now a duplicate is recorded (not
+     * rejected) and flagged via {@code duplicateOfSubmissionId}; the caller
+     * ({@code ParticipationService#submit}) is responsible for publishing the fraud event and
+     * {@code ValidationService#attemptAutoValidation} skips auto-approval on a flagged submission.
+     */
     @Transactional
     public TaskSubmission recordSubmission(UUID participationId, UUID taskId, Map<String, Object> content,
                                             Object attachments) {
         String contentJson = toJson(content);
         String hash = sha256(contentJson);
 
-        if (submissionRepository.existsByTaskIdAndContentHash(taskId, hash)) {
-            // Stronger than the original design intent (which only "blocks auto-validation") —
-            // an outright block is simpler, and no FraudEvent is raised: that table has no
-            // owning module until Phase 10 (anti-fraude).
-            throw new BusinessException("DUPLICATE_SUBMISSION_HASH", HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Une soumission identique existe déjà pour cette tâche (BR-051).");
-        }
-
+        Optional<TaskSubmission> existing = submissionRepository.findFirstByTaskIdAndContentHashOrderBySubmittedAtAsc(taskId, hash);
         String attachmentsJson = attachments == null ? null : toJson(attachments);
-        return submissionRepository.save(new TaskSubmission(participationId, taskId, contentJson, hash, attachmentsJson));
+        return submissionRepository.save(new TaskSubmission(participationId, taskId, contentJson, hash, attachmentsJson,
+                existing.map(TaskSubmission::getId).orElse(null)));
     }
 
     public List<TaskSubmission> listByParticipation(UUID participationId) {
