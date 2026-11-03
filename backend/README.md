@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 3 — Organisations
+## État actuel : Phase 4 — Campagnes et tâches
 
 Phase 1 (architecture et base technique) :
 
@@ -63,8 +63,34 @@ Phase 3 (organisations) :
   `POST /api/v1/organizations/{id}/members/{accept,decline}`,
   `DELETE /api/v1/organizations/{id}/members/{userId}`.
 
-Pas encore implémenté (phases suivantes, DAT §11) : campagnes/tâches, participations/
-soumissions, validation, wallet/ledger, paiements, anti-fraude.
+Phase 4 (campagnes et tâches) :
+
+- Modules `campaigns` (`Campaign`/`CampaignEligibilityCriteria`, `CampaignService`) et `tasks`
+  (`Task`, `TaskService`) — US-030 à US-033.
+- `type` et `expectedProofType` sont des chaînes libres validées contre une liste blanche
+  (`TaskTypes`, `ProofTypes`), pas des enums JPA — ajouter un type de tâche futur (cf. CDCF
+  §2.1) reste un changement d'une ligne, jamais une migration de schéma.
+- `budget_total` est recalculé automatiquement à chaque tâche ajoutée (somme de
+  `reward_amount × max_participants` sur toutes les tâches), jamais saisi manuellement.
+- BR-012 (justification obligatoire si critère de genre) et BR-013 (dates, places > 0)
+  appliquées à la création/modification, pas seulement par les contraintes `CHECK` en base.
+- Une campagne n'est modifiable (tâches, critères, titre) que tant qu'elle est `DRAFT` ;
+  `submit-for-review` (DRAFT → PENDING_REVIEW) exige au moins une tâche.
+- `GET/POST /api/v1/campaigns`, `GET/PUT /api/v1/campaigns/{id}/eligibility-criteria`,
+  `POST /api/v1/campaigns/{id}/submit-for-review`,
+  `GET/POST /api/v1/campaigns/{id}/tasks`.
+- Correctifs transverses : `MissingServletRequestParameterException` et
+  `MethodArgumentTypeMismatchException` renvoient désormais 400 (au lieu de 500) dans le
+  `GlobalExceptionHandler`.
+
+Explicitement reporté : l'approbation/le rejet d'une campagne (PENDING_REVIEW → PUBLISHED ou
+REJECTED) exige la réservation du budget sur le portefeuille de l'organisation (BR-010), donc
+le module `wallet` (Phase 7) — ce n'est pas un oubli, c'est la dépendance annoncée dans la
+roadmap du DAT. Pause/annulation/statistiques de campagne suivront une fois des campagnes
+publiées possibles.
+
+Pas encore implémenté (phases suivantes, DAT §11) : participations/soumissions, validation,
+wallet/ledger, paiements, anti-fraude.
 
 ## Prérequis
 
