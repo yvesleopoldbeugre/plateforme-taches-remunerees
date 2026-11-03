@@ -84,7 +84,16 @@ public class WalletService {
                 .orElseGet(() -> {
                     Wallet wallet = getOrCreateWallet(ownerType, ownerId);
                     walletRepository.creditAvailable(wallet.getId(), amount);
-                    wallet = applyAndDetach(wallet, w -> w.applyCredit(amount));
+                    boolean isReward = referenceType == ReferenceType.REWARD;
+                    if (isReward) {
+                        walletRepository.bumpLifetimeEarned(wallet.getId(), amount);
+                    }
+                    wallet = applyAndDetach(wallet, w -> {
+                        w.applyCredit(amount);
+                        if (isReward) {
+                            w.bumpLifetimeEarned(amount);
+                        }
+                    });
                     recordTransaction(wallet, TransactionType.CREDIT, amount, wallet.getAvailableBalance(),
                             referenceType, referenceId, idempotencyKey);
                     return wallet;
@@ -144,7 +153,16 @@ public class WalletService {
                         throw new ConflictException("CONSUME_EXCEEDS_RESERVED",
                                 "Le montant à consommer dépasse le solde réservé du portefeuille.");
                     }
-                    wallet = applyAndDetach(wallet, w -> w.applyConsumeReserved(amount));
+                    boolean isWithdrawal = referenceType == ReferenceType.WITHDRAWAL;
+                    if (isWithdrawal) {
+                        walletRepository.bumpLifetimeWithdrawn(wallet.getId(), amount);
+                    }
+                    wallet = applyAndDetach(wallet, w -> {
+                        w.applyConsumeReserved(amount);
+                        if (isWithdrawal) {
+                            w.bumpLifetimeWithdrawn(amount);
+                        }
+                    });
                     recordTransaction(wallet, TransactionType.WITHDRAWAL, amount.negate(), wallet.getReservedBalance(),
                             referenceType, referenceId, idempotencyKey);
                     return wallet;

@@ -51,4 +51,13 @@ public interface WalletRepository extends JpaRepository<Wallet, UUID> {
     @Modifying
     @Query("UPDATE Wallet w SET w.reservedBalance = w.reservedBalance - :amount WHERE w.id = :id AND w.reservedBalance >= :amount")
     int tryConsumeReserved(@Param("id") UUID id, @Param("amount") BigDecimal amount);
+
+    /** KPI counters only — never gate anything, always succeed. See {@link Wallet#bumpLifetimeEarned}. */
+    @Modifying
+    @Query("UPDATE Wallet w SET w.lifetimeEarned = w.lifetimeEarned + :amount WHERE w.id = :id")
+    int bumpLifetimeEarned(@Param("id") UUID id, @Param("amount") BigDecimal amount);
+
+    @Modifying
+    @Query("UPDATE Wallet w SET w.lifetimeWithdrawn = w.lifetimeWithdrawn + :amount WHERE w.id = :id")
+    int bumpLifetimeWithdrawn(@Param("id") UUID id, @Param("amount") BigDecimal amount);
 }

@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 7 — Wallet et ledger
+## État actuel : Phase 8 — Paiements et retraits
 
 Phase 1 (architecture et base technique) :
 
@@ -230,19 +230,92 @@ Phase 7 (wallet et ledger) — module `wallet` (`Wallet`, `WalletTransaction`, `
   preuve que `ParticipationConcurrencyTest` en Phase 5, appliquée à BR-010).
 - `GET /api/v1/wallet/me(/transactions)`,
   `GET /api/v1/organizations/{id}/wallet(/transactions)` (membre actif requis),
-  `POST /api/v1/organizations/{id}/wallet/deposit` (`OWNER`/`MANAGER`),
-  `POST /api/v1/campaigns/{id}/cancel`.
+  `POST /api/v1/campaigns/{id}/cancel`. Le dépôt simulé de cette phase vivait directement sur
+  ce contrôleur ; il a été remplacé en Phase 8 par le vrai module `payments` — voir plus bas.
 
-Explicitement reporté : la vraie abstraction `PaymentProvider` et la table `payments`/
-`payment_methods` (Phase 8) ; les retraits utilisateur (`withdrawals`, Phase 8) ; les types de
-transaction `DEBIT`/`FEE`/`REVERSAL`/`ADJUSTMENT` sont définis dans l'enum mais n'ont encore
-aucune méthode de service (frais de retrait Phase 8, corrections admin Phase 9) ; la libération
-du budget réservé non consommé à la complétion/expiration naturelle d'une campagne (seule
-l'annulation explicite le fait pour l'instant — `COMPLETED`/`EXPIRED` n'ont pas encore de
-scheduler dédié, contrairement à `CANCELLED`) ; bootstrap d'un premier compte `PLATFORM_ADMIN`.
+Explicitement reporté à l'époque : la vraie abstraction `PaymentProvider` et la table
+`payments`/`payment_methods`, les retraits utilisateur — soldés en Phase 8, voir plus bas.
+Toujours reporté : les types de transaction `DEBIT`/`FEE`/`REVERSAL`/`ADJUSTMENT` sont définis
+dans l'enum mais n'ont encore aucune méthode de service (corrections admin, Phase 9) ; la
+libération du budget réservé non consommé à la complétion/expiration naturelle d'une campagne
+(seule l'annulation explicite le fait pour l'instant) ; bootstrap d'un premier compte
+`PLATFORM_ADMIN`.
 
-Pas encore implémenté (phases suivantes, DAT §11) : litiges, paiements/retraits réels,
-anti-fraude, administration, statistiques.
+Phase 8 (paiements et retraits) — modules `payments` (`PaymentMethod`, `Payment`,
+`PaymentProvider`/`PaymentProviderRegistry`/`SimulatedPaymentProvider`, `PaymentMethodService`,
+`PaymentService`) et `withdrawals` (`Withdrawal`, `WithdrawalService`) — UC-17/UC-18,
+BR-002/BR-040 à BR-043 :
+
+- Abstraction `PaymentProvider` (H5 du CDCF — "aucun provider n'est choisi en dur") : une
+  interface + un registre Spring (`PaymentProviderRegistry`, une `Map<code, PaymentProvider>`
+  construite depuis tous les beans du type) + un seul adaptateur pour l'instant
+  (`SimulatedPaymentProvider`, code `SIMULATED`). Ajouter un vrai provider (Orange Money, Wave…)
+  plus tard sera une implémentation de l'interface, détectée automatiquement — zéro changement
+  dans `PaymentService`/`WithdrawalService`. L'interface prend des identifiants primitifs
+  (`UUID`/`BigDecimal`/`String`), jamais les entités `Payment`/`Withdrawal` elles-mêmes : sinon
+  `payments` dépendrait de `withdrawals`, qui dépend déjà de `payments` (cf. DAT §8.1).
+- Remplace le dépôt simulé ad-hoc de la Phase 7 (`WalletController#deposit`, supprimé) par un
+  vrai flux : `POST /organizations/{id}/payments` crée un `Payment` PENDING, appelle le
+  provider, puis crédite le wallet de l'organisation (`WalletService#credit`,
+  `ReferenceType.PAYMENT`) seulement si le provider confirme.
+- En-tête `Idempotency-Key` obligatoire sur les deux endpoints de création financière (DAT §8.3)
+  — absent, c'est un 400 `MISSING_HEADER` (`MissingRequestHeaderException` ajouté au
+  `GlobalExceptionHandler`, même correctif transverse que pour les paramètres manquants en
+  Phase 4). `Payment`/`Withdrawal` sont eux-mêmes recherchés par cette clé avant toute mutation :
+  un retry renvoie la même ressource plutôt que d'en créer une seconde.
+- BR-043 (retrait) — "débit immédiat vers reserved_balance dès la demande" (DAT §8.3) : la
+  demande réserve `amount` sur le wallet de l'utilisateur dans la même transaction que la
+  création du `Withdrawal`, avant toute revue. Si le solde est insuffisant,
+  `WalletService#reserve` lève `INSUFFICIENT_BALANCE` et annule aussi l'insertion du retrait
+  (même transaction) — pas de ligne orpheline. Les frais sont déduits du montant demandé
+  (`net_amount = amount - fees`), pas ajoutés par-dessus (convention fintech la plus courante).
+- Machine à états `Withdrawal` : `REQUESTED` → (`UNDER_REVIEW` →) `APPROVED` → `PROCESSING` →
+  `COMPLETED`/`FAILED`, ou `REQUESTED`/`UNDER_REVIEW` → `REJECTED`/`CANCELLED`. Un montant
+  au-dessus du seuil de revue manuelle part en `UNDER_REVIEW` (file visible par
+  `PLATFORM_OPERATOR`/`ADMIN`, `GET /withdrawals?status=`) ; en dessous, `requestWithdrawal`
+  enchaîne directement `APPROVED → PROCESSING → COMPLETED` dans le même appel — **c'est le
+  critère de validation explicite de cette phase** ("un retrait simulé complète le cycle
+  REQUESTED→COMPLETED", DAT §11). `V6__add_withdrawal_rejection_reason.sql` ajoute la colonne
+  manquante pour que l'utilisateur sache pourquoi, même gap que `V4` pour les campagnes.
+- Hypothèses explicites non chiffrées dans le dossier de conception, tranchées ici comme
+  `TaskTypes`/`RejectionReasons` avant (configurables, `platform.withdrawal.*`, pas des
+  constantes) : montant minimum 1000 XOF, taux de frais 1,5 %, seuil de revue manuelle 50 000
+  XOF. BR-044 (commission plateforme prélevée au crédit de la récompense) reste délibérément
+  hors de cette phase : orthogonal aux dépôts/retraits eux-mêmes, et nécessiterait un wallet de
+  revenu plateforme qui n'a pas sa place naturelle dans "paiements et retraits" — reporté à une
+  passe ultérieure.
+- BR-002 (compte suspendu/banni) gate aussi la demande de retrait, pas seulement la
+  participation — le dossier le nomme explicitement pour ce cas.
+- Petit correctif rétroactif remarqué en écrivant cette phase : `wallets.lifetime_earned`
+  n'était jamais incrémenté depuis la Phase 7 (seul `available_balance` l'était), rendant ce
+  compteur KPI (CDCF §15, "revenu total") inerte. Corrigé dans `WalletService#credit` /
+  `#consumeReserved` (incrémenté seulement pour `REWARD`/`WITHDRAWAL` respectivement, pas pour
+  les dépôts d'organisation).
+- `POST /api/v1/payment-methods/me`, `GET /api/v1/payment-methods/me`,
+  `POST/GET /api/v1/organizations/{id}/payment-methods`,
+  `POST/GET /api/v1/organizations/{id}/payments`,
+  `POST /api/v1/withdrawals`, `GET /api/v1/withdrawals/me`, `GET /api/v1/withdrawals/{id}`
+  (propriétaire ou opérateur), `GET /api/v1/withdrawals?status=` (opérateur/admin),
+  `POST /api/v1/withdrawals/{id}/{cancel,approve,reject}`.
+- **Testé par `WithdrawalLifecycleTest`** (11 cas — petit retrait auto-complété, grand retrait
+  en revue puis approuvé, rejet et annulation qui libèrent le solde, montant sous le minimum et
+  solde insuffisant refusés avant toute mutation, rejeu de clé d'idempotence côté retrait et
+  côté dépôt, provider non supporté refusé, premier moyen de paiement enregistré devenant
+  défaut) et vérifié par curl en local et dans le conteneur Docker reconstruit (dépôt sans
+  en-tête → 400, avec en-tête → crédité, campagne → tâche → participation → approbation → petit
+  retrait complété en un appel → grand retrait mis en revue puis approuvé par un opérateur).
+
+Explicitement reporté : KYC documentaire utilisateur au-delà d'un cumul de retraits (DAT §8.3
+le mentionne, mais aucun champ `kyc_status` n'existe sur `users` — seules les organisations en
+ont un depuis la Phase 3 ; construire ce flux documentaire appartient davantage à
+l'administration, Phase 9) ; webhook provider asynchrone (le provider simulé répond toujours
+synchrone et immédiatement — l'interface `PaymentProvider` est conçue pour qu'un vrai provider
+async n'oblige pas à reprendre `PaymentService`/`WithdrawalService`, mais le chemin webhook
+lui-même n'a rien à confirmer avant qu'un vrai provider existe) ; BR-044 (commission
+plateforme, cf. ci-dessus) ; bootstrap d'un premier compte `PLATFORM_ADMIN`.
+
+Pas encore implémenté (phases suivantes, DAT §11) : litiges, anti-fraude, administration,
+statistiques.
 
 ## Prérequis
 

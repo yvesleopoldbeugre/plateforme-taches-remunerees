@@ -69,7 +69,7 @@ class WalletLedgerInvariantTest {
         UUID campaignId = UUID.randomUUID();
 
         Wallet wallet = walletService.credit(WalletOwnerType.ORGANIZATION, organizationId, BigDecimal.valueOf(100_000),
-                ReferenceType.DEPOSIT, null, "test-deposit:" + UUID.randomUUID());
+                ReferenceType.PAYMENT, null, "test-deposit:" + UUID.randomUUID());
         assertThat(wallet.getAvailableBalance()).isEqualByComparingTo("100000");
         assertLedgerMatchesLiveBalance(wallet);
 
@@ -100,7 +100,7 @@ class WalletLedgerInvariantTest {
     void reserveBeyondAvailableBalanceFailsAndLeavesLedgerConsistent() {
         UUID organizationId = UUID.randomUUID();
         Wallet wallet = walletService.credit(WalletOwnerType.ORGANIZATION, organizationId, BigDecimal.valueOf(1_000),
-                ReferenceType.DEPOSIT, null, "test-deposit:" + UUID.randomUUID());
+                ReferenceType.PAYMENT, null, "test-deposit:" + UUID.randomUUID());
 
         assertThatThrownBy(() -> walletService.reserve(WalletOwnerType.ORGANIZATION, organizationId, BigDecimal.valueOf(5_000),
                 ReferenceType.CAMPAIGN_BUDGET, UUID.randomUUID(), "test-overreserve:" + UUID.randomUUID()))
@@ -142,7 +142,7 @@ class WalletLedgerInvariantTest {
         int attempts = 100;
 
         Wallet wallet = walletService.credit(WalletOwnerType.ORGANIZATION, organizationId,
-                unit.multiply(BigDecimal.valueOf(capacityInUnits)), ReferenceType.DEPOSIT, null,
+                unit.multiply(BigDecimal.valueOf(capacityInUnits)), ReferenceType.PAYMENT, null,
                 "test-deposit:" + UUID.randomUUID());
 
         AtomicInteger succeeded = new AtomicInteger();

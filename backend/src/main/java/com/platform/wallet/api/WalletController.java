@@ -1,32 +1,24 @@
 package com.platform.wallet.api;
 
 import com.platform.organizations.application.OrganizationService;
-import com.platform.organizations.domain.OrganizationRole;
-import com.platform.wallet.api.dto.DepositRequest;
 import com.platform.wallet.api.dto.WalletResponse;
 import com.platform.wallet.api.dto.WalletTransactionResponse;
 import com.platform.wallet.application.WalletService;
-import com.platform.wallet.domain.ReferenceType;
 import com.platform.wallet.domain.Wallet;
 import com.platform.wallet.domain.WalletOwnerType;
-import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Exposes the wallet/ledger to users and organizations (DAT §4.2, roadmap Phase 7).
- *
- * <p>{@link #deposit} is explicitly a stand-in: it credits an organization's wallet directly, with
- * no provider, webhook or {@code payments} row involved — it exists only so a campaign can be
- * published against a real balance before Phase 8 (Paiements et retraits) builds the actual
- * {@code PaymentProvider} abstraction (H5 in the CDCF) with a manual/simulated adapter and real
- * providers behind it. It deliberately does not touch the {@code payments} table.
+ * Exposes the wallet/ledger to users and organizations (DAT §4.2, roadmap Phase 7). Crediting a
+ * wallet from the outside is not done here: organization deposits go through
+ * {@code PaymentController} (Phase 8, {@code payments} module) and user payouts through
+ * {@code WithdrawalController} (Phase 8, {@code withdrawals} module) — this controller is
+ * read-only on purpose.
  */
 @RestController
 public class WalletController {
@@ -61,14 +53,6 @@ public class WalletController {
         organizationService.assertActiveMembership(organizationId, currentUserId(authentication));
         Wallet wallet = walletService.getOrCreateWallet(WalletOwnerType.ORGANIZATION, organizationId);
         return walletService.listTransactions(wallet.getId()).stream().map(WalletTransactionResponse::of).toList();
-    }
-
-    @PostMapping("/api/v1/organizations/{organizationId}/wallet/deposit")
-    public WalletResponse deposit(Authentication authentication, @PathVariable UUID organizationId,
-                                   @Valid @RequestBody DepositRequest request) {
-        organizationService.assertActiveMembership(organizationId, currentUserId(authentication), OrganizationRole.OWNER, OrganizationRole.MANAGER);
-        return WalletResponse.of(walletService.credit(WalletOwnerType.ORGANIZATION, organizationId, request.amount(),
-                ReferenceType.DEPOSIT, null, "manual-deposit:" + UUID.randomUUID()));
     }
 
     private UUID currentUserId(Authentication authentication) {

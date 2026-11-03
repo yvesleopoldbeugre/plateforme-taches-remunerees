@@ -37,6 +37,14 @@ jwt:
   access-token-ttl-minutes: ${JWT_ACCESS_TTL_MINUTES:15}
   refresh-token-ttl-days: ${JWT_REFRESH_TTL_DAYS:30}
 
+platform:
+  withdrawal:
+    # BR-043 (DAT §4.2/§11) names these rules but not their values — hypotheses explicites,
+    # tranchées here (XOF), same as TaskTypes/RejectionReasons before. Override via env in prod.
+    minimum-amount: ${WITHDRAWAL_MINIMUM_AMOUNT:1000}
+    fee-rate: ${WITHDRAWAL_FEE_RATE:0.015}
+    manual-review-threshold: ${WITHDRAWAL_MANUAL_REVIEW_THRESHOLD:50000}
+
 management:
   endpoints:
     web:

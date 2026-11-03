@@ -92,6 +92,15 @@ public class Wallet {
         this.reservedBalance = this.reservedBalance.subtract(amount);
     }
 
+    /** KPI counters (CDCF §15 — "revenu total" / retraits cumulés) ; never decrease. */
+    public void bumpLifetimeEarned(BigDecimal amount) {
+        this.lifetimeEarned = this.lifetimeEarned.add(amount);
+    }
+
+    public void bumpLifetimeWithdrawn(BigDecimal amount) {
+        this.lifetimeWithdrawn = this.lifetimeWithdrawn.add(amount);
+    }
+
     public UUID getId() {
         return id;
     }

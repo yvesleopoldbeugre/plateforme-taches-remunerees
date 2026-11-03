@@ -19,7 +19,7 @@ Marketplace de micro-tâches et de campagnes rémunérées (MVP), contexte Afriq
 - [x] Phase 5 — Participations et soumissions
 - [x] Phase 6 — Validation
 - [x] Phase 7 — Wallet et ledger
-- [ ] Phase 8 — Paiements et retraits
+- [x] Phase 8 — Paiements et retraits
 - [ ] Phase 9 — Administration
 - [ ] Phase 10 — Anti-fraude
 - [ ] Phase 11 — Statistiques
