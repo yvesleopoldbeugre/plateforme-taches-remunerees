@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 5 — Participations et soumissions
+## État actuel : Phase 6 — Validation
 
 Phase 1 (architecture et base technique) :
 
@@ -137,8 +137,36 @@ d'un premier compte `PLATFORM_ADMIN` ; `IN_PROGRESS` reste un statut inutilisé 
 passage `FULL → PUBLISHED` d'une campagne à la libération d'une place (US-039, priorité
 SHOULD).
 
-Pas encore implémenté (phases suivantes, DAT §11) : validation (file de revue manuelle,
-litiges), wallet/ledger, paiements, anti-fraude.
+Phase 6 (validation) — module `validation` (`Validation`, `ValidationService`) — UC-11 à UC-13 :
+
+- `POST /api/v1/validations/{submissionId}` — décision manuelle d'un `OWNER`/`MANAGER` de
+  l'organisation : `APPROVED`, `REJECTED` ou `CORRECTION_REQUESTED`. `AUTO_APPROVED` est
+  refusé sur cet endpoint (système uniquement).
+- BR-031 (motifs de rejet standardisés) : `RejectionReasons` — comme pour `TaskTypes`, le
+  dossier de conception nommait la règle sans jamais énumérer les valeurs ; tranché ici
+  (`INCOMPLETE_SUBMISSION`, `PROOF_DOES_NOT_MATCH_INSTRUCTIONS`,
+  `ILLEGIBLE_OR_UNUSABLE_PROOF`, `SUSPECTED_FRAUD`, `OUT_OF_SCOPE`, `OTHER`), appliquée aussi
+  à `CORRECTION_REQUESTED`. Une décision sans motif valide est rejetée (400) — **c'est le
+  critère de validation explicite de cette phase** ("un rejet avec motif déclenche un statut
+  cohérent", DAT §11).
+- UC-11 (validation automatique) : `AutoValidationRuleEvaluator` — délibérément minimal,
+  opt-in par tâche via `auto_validation_rules = {"requiredFields": ["q1", "q2"]}` (tous les
+  champs listés doivent être présents et non vides). Déclenché par
+  `ParticipationSubmittedEvent` (premier usage réel de l'event bus posé en Phase 1) ; toute
+  erreur d'évaluation est absorbée par `AutoValidationListener` et retombe en revue manuelle,
+  jamais en échec de la soumission elle-même.
+- `GET /api/v1/participations/{id}/submissions` — un participant voit sa propre preuve, un
+  membre actif de l'organisation voit la preuve de n'importe quelle participation sur ses
+  tâches (UC-12).
+- `TaskParticipation` gagne `approve()`/`reject()`/`requestCorrection()`, tous les trois ne
+  partant que de `UNDER_REVIEW` — une seconde décision sur une soumission déjà tranchée
+  échoue proprement (409).
+- `SubmissionApprovedEvent` publié sur toute approbation (manuelle ou auto) : la validation ne
+  touche jamais à l'argent (DAT §8.2) — c'est au module `wallet` (Phase 7) de l'écouter pour
+  créer la `Reward` et créditer le portefeuille.
+
+Pas encore implémenté (phases suivantes, DAT §11) : litiges, wallet/ledger, paiements,
+anti-fraude.
 
 ## Prérequis
 

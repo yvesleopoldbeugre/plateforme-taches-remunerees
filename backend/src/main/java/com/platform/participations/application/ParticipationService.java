@@ -8,9 +8,11 @@ import com.platform.common.exception.ConflictException;
 import com.platform.common.exception.NotFoundException;
 import com.platform.participations.domain.ParticipationStatus;
 import com.platform.participations.domain.TaskParticipation;
+import com.platform.participations.domain.event.ParticipationSubmittedEvent;
 import com.platform.participations.infrastructure.TaskParticipationRepository;
 import com.platform.common.exception.ForbiddenException;
 import com.platform.submissions.application.SubmissionService;
+import com.platform.submissions.domain.TaskSubmission;
 import com.platform.tasks.application.TaskService;
 import com.platform.tasks.domain.Task;
 import com.platform.tasks.domain.TaskStatus;
@@ -22,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -40,15 +43,17 @@ public class ParticipationService {
     private final CampaignService campaignService;
     private final SubmissionService submissionService;
     private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ParticipationService(TaskParticipationRepository participationRepository, TaskService taskService,
                                  CampaignService campaignService, SubmissionService submissionService,
-                                 UserService userService) {
+                                 UserService userService, ApplicationEventPublisher eventPublisher) {
         this.participationRepository = participationRepository;
         this.taskService = taskService;
         this.campaignService = campaignService;
         this.submissionService = submissionService;
         this.userService = userService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -94,8 +99,35 @@ public class ParticipationService {
 
         // May throw DUPLICATE_SUBMISSION_HASH (BR-051) — participation stays as-is, resubmission
         // with different content remains possible.
-        submissionService.recordSubmission(participationId, participation.getTaskId(), content, attachments);
+        TaskSubmission submission = submissionService.recordSubmission(participationId, participation.getTaskId(), content, attachments);
         participation.submit();
+
+        // The validation module listens for this to attempt auto-validation (UC-11) — published
+        // synchronously, in the same transaction: if it throws, the listener catches it itself
+        // (see AutoValidationListener) so a rule-evaluation bug never breaks the submission.
+        eventPublisher.publishEvent(new ParticipationSubmittedEvent(
+                participationId, participation.getTaskId(), submission.getId(), content));
+        return participation;
+    }
+
+    @Transactional
+    public TaskParticipation approve(UUID participationId) {
+        TaskParticipation participation = getParticipation(participationId);
+        participation.approve();
+        return participation;
+    }
+
+    @Transactional
+    public TaskParticipation reject(UUID participationId) {
+        TaskParticipation participation = getParticipation(participationId);
+        participation.reject();
+        return participation;
+    }
+
+    @Transactional
+    public TaskParticipation requestCorrection(UUID participationId) {
+        TaskParticipation participation = getParticipation(participationId);
+        participation.requestCorrection();
         return participation;
     }
 

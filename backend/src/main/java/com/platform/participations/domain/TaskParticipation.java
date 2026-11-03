@@ -88,6 +88,30 @@ public class TaskParticipation {
         this.resolvedAt = Instant.now();
     }
 
+    private void assertUnderReview() {
+        if (status != ParticipationStatus.UNDER_REVIEW) {
+            throw new BusinessException("PARTICIPATION_NOT_UNDER_REVIEW", HttpStatus.CONFLICT,
+                    "Seule une participation en cours de revue peut recevoir une décision (statut actuel : " + status + ").");
+        }
+    }
+
+    public void approve() {
+        assertUnderReview();
+        this.status = ParticipationStatus.APPROVED;
+        this.resolvedAt = Instant.now();
+    }
+
+    public void reject() {
+        assertUnderReview();
+        this.status = ParticipationStatus.REJECTED;
+        this.resolvedAt = Instant.now();
+    }
+
+    public void requestCorrection() {
+        assertUnderReview();
+        this.status = ParticipationStatus.CORRECTION_REQUESTED;
+    }
+
     public void cancel() {
         if (status != ParticipationStatus.RESERVED && status != ParticipationStatus.IN_PROGRESS) {
             throw new BusinessException("PARTICIPATION_NOT_CANCELLABLE", HttpStatus.CONFLICT,

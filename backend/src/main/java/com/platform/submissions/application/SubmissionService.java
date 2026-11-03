@@ -2,12 +2,14 @@ package com.platform.submissions.application;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.common.exception.BusinessException;
+import com.platform.common.exception.NotFoundException;
 import com.platform.submissions.domain.TaskSubmission;
 import com.platform.submissions.infrastructure.TaskSubmissionRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -38,15 +40,23 @@ public class SubmissionService {
 
         if (submissionRepository.existsByTaskIdAndContentHash(taskId, hash)) {
             // Stronger than the original design intent (which only "blocks auto-validation") —
-            // there is no auto-validation engine yet (Phase 6), so an outright block is the
-            // simplest correct interim behaviour. No FraudEvent is raised yet either: that table
-            // has no owning module until Phase 10 (anti-fraude).
+            // an outright block is simpler, and no FraudEvent is raised: that table has no
+            // owning module until Phase 10 (anti-fraude).
             throw new BusinessException("DUPLICATE_SUBMISSION_HASH", HttpStatus.UNPROCESSABLE_ENTITY,
                     "Une soumission identique existe déjà pour cette tâche (BR-051).");
         }
 
         String attachmentsJson = attachments == null ? null : toJson(attachments);
         return submissionRepository.save(new TaskSubmission(participationId, taskId, contentJson, hash, attachmentsJson));
+    }
+
+    public List<TaskSubmission> listByParticipation(UUID participationId) {
+        return submissionRepository.findByParticipationId(participationId);
+    }
+
+    public TaskSubmission getSubmission(UUID submissionId) {
+        return submissionRepository.findById(submissionId)
+                .orElseThrow(() -> new NotFoundException("SUBMISSION_NOT_FOUND", "Soumission introuvable."));
     }
 
     private String toJson(Object value) {
