@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 2 — Authentification et utilisateurs
+## État actuel : Phase 3 — Organisations
 
 Phase 1 (architecture et base technique) :
 
@@ -43,8 +43,28 @@ Explicitement reporté (hors MVP à ce stade) : MFA/TOTP (prévu pour PLATFORM_A
 ORGANIZATION_OWNER, cf. CDCT §8), réinitialisation de mot de passe, révocation de toutes les
 sessions d'un coup, bootstrap d'un premier compte PLATFORM_ADMIN.
 
-Pas encore implémenté (phases suivantes, DAT §11) : organisations, campagnes/tâches,
-participations/soumissions, validation, wallet/ledger, paiements, anti-fraude.
+Phase 3 (organisations) :
+
+- Module `organizations` (entités `Organization`/`OrganizationMember`, `OrganizationService`) —
+  US-010 à US-014 (hors vérification admin, cf. ci-dessous).
+- Créer une organisation rend son créateur `OWNER` immédiatement (pas d'invitation pour
+  soi-même) ; seul un `OWNER` peut inviter (toujours en tant que `MANAGER`, cf. US-011) ou
+  retirer un membre ; le `OWNER` ne peut pas être retiré.
+- Invitation par email : l'invité doit déjà avoir un compte USER (pas d'invitation avec
+  création de compte à la volée en MVP) ; il peut accepter ou refuser.
+- `V3__add_kyc_status_check.sql` : `kyc_status` n'avait pas de contrainte `CHECK` dans la V1
+  (seule colonne de statut dans ce cas) — corrigé par cohérence avec le reste du schéma.
+- Décision de conception : une organisation `PENDING_VERIFICATION` peut gérer ses membres
+  normalement (BR-003 ne bloque que `SUSPENDED`) — la vérification admin (US-014) ne
+  conditionnera que la publication de campagnes (Phase 4+), pas la gestion d'équipe ; cette
+  vérification elle-même n'est pas encore implémentée (nécessite le module admin, Phase 9).
+- `GET /api/v1/organizations/{id}`, `GET /api/v1/organizations/me/memberships`,
+  `GET/POST /api/v1/organizations/{id}/members`,
+  `POST /api/v1/organizations/{id}/members/{accept,decline}`,
+  `DELETE /api/v1/organizations/{id}/members/{userId}`.
+
+Pas encore implémenté (phases suivantes, DAT §11) : campagnes/tâches, participations/
+soumissions, validation, wallet/ledger, paiements, anti-fraude.
 
 ## Prérequis
 
