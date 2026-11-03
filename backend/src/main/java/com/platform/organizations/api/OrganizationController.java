@@ -5,6 +5,7 @@ import com.platform.organizations.api.dto.InviteMemberRequest;
 import com.platform.organizations.api.dto.MemberResponse;
 import com.platform.organizations.api.dto.MembershipResponse;
 import com.platform.organizations.api.dto.OrganizationResponse;
+import com.platform.organizations.api.dto.RejectVerificationRequest;
 import com.platform.organizations.application.OrganizationService;
 import com.platform.organizations.domain.Organization;
 import com.platform.organizations.domain.OrganizationMember;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -88,6 +90,34 @@ public class OrganizationController {
                                         @PathVariable UUID memberUserId) {
         organizationService.removeMember(organizationId, currentUserId(authentication), memberUserId);
         return ResponseEntity.noContent().build();
+    }
+
+    /** UC-21/US-014 — verification, closing the Phase 3 gap (see {@code CampaignService#publish}). */
+    @PostMapping("/{organizationId}/verify")
+    @PreAuthorize("hasAnyAuthority('ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_OPERATOR')")
+    public OrganizationResponse verify(Authentication authentication, @PathVariable UUID organizationId) {
+        return OrganizationResponse.of(organizationService.verify(currentUserId(authentication), organizationId));
+    }
+
+    @PostMapping("/{organizationId}/reject-verification")
+    @PreAuthorize("hasAnyAuthority('ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_OPERATOR')")
+    public OrganizationResponse rejectVerification(Authentication authentication, @PathVariable UUID organizationId,
+                                                      @Valid @RequestBody RejectVerificationRequest request) {
+        return OrganizationResponse.of(
+                organizationService.rejectVerification(currentUserId(authentication), organizationId, request.reason()));
+    }
+
+    /** UC-21 — PLATFORM_ADMIN only, same reasoning as {@code UserController#suspend}. */
+    @PostMapping("/{organizationId}/suspend")
+    @PreAuthorize("hasAuthority('ROLE_PLATFORM_ADMIN')")
+    public OrganizationResponse suspend(Authentication authentication, @PathVariable UUID organizationId) {
+        return OrganizationResponse.of(organizationService.suspend(currentUserId(authentication), organizationId));
+    }
+
+    @PostMapping("/{organizationId}/reactivate")
+    @PreAuthorize("hasAuthority('ROLE_PLATFORM_ADMIN')")
+    public OrganizationResponse reactivate(Authentication authentication, @PathVariable UUID organizationId) {
+        return OrganizationResponse.of(organizationService.reactivate(currentUserId(authentication), organizationId));
     }
 
     private MemberResponse toMemberResponse(OrganizationMember member) {

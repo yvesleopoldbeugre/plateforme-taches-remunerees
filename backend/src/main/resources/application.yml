@@ -44,6 +44,11 @@ platform:
     minimum-amount: ${WITHDRAWAL_MINIMUM_AMOUNT:1000}
     fee-rate: ${WITHDRAWAL_FEE_RATE:0.015}
     manual-review-threshold: ${WITHDRAWAL_MANUAL_REVIEW_THRESHOLD:50000}
+  admin:
+    # Empty by default: POST /api/v1/admin/bootstrap refuses outright until this is set — see
+    # AdminBootstrapService. Set it once in the target environment, bootstrap the first
+    # PLATFORM_ADMIN, then rotate/unset it; the endpoint also self-disables once any admin exists.
+    bootstrap-secret: ${ADMIN_BOOTSTRAP_SECRET:}
 
 management:
   endpoints:

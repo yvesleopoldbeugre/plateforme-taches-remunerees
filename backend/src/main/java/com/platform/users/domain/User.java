@@ -1,5 +1,6 @@
 package com.platform.users.domain;
 
+import com.platform.common.exception.ConflictException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -84,6 +85,40 @@ public class User {
         if (status == UserStatus.PENDING_VERIFICATION && isEmailVerified() && isPhoneVerified()) {
             this.status = UserStatus.ACTIVE;
         }
+        this.updatedAt = Instant.now();
+    }
+
+    /** UC-21 — admin action. Refuses on an already-{@code BANNED} account: that's a more severe
+     *  state than a suspension, and downgrading it silently would hide why it was banned. */
+    public void suspend() {
+        if (status == UserStatus.BANNED) {
+            throw new ConflictException("USER_BANNED", "Ce compte est banni, pas seulement suspendu.");
+        }
+        this.status = UserStatus.SUSPENDED;
+        this.updatedAt = Instant.now();
+    }
+
+    /** From SUSPENDED or BANNED back to ACTIVE. Doesn't re-check email/phone verification —
+     *  a user reaching SUSPENDED/BANNED from anywhere else than ACTIVE is an edge case this MVP
+     *  accepts rather than tracks precisely. */
+    public void reactivate() {
+        if (status != UserStatus.SUSPENDED && status != UserStatus.BANNED) {
+            throw new ConflictException("USER_NOT_SUSPENDED",
+                    "Ce compte n'est ni suspendu ni banni (statut actuel : " + status + ").");
+        }
+        this.status = UserStatus.ACTIVE;
+        this.updatedAt = Instant.now();
+    }
+
+    public void ban() {
+        this.status = UserStatus.BANNED;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Admin bootstrap/promotion (UC absent from the CDCF's own list — every phase since Phase 2
+     *  flagged "bootstrap d'un premier compte PLATFORM_ADMIN" as deferred; closed in Phase 9). */
+    public void grantPlatformRole(PlatformRole role) {
+        this.platformRole = role;
         this.updatedAt = Instant.now();
     }
 

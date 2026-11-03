@@ -1,15 +1,19 @@
 package com.platform.users.api;
 
 import com.platform.users.api.dto.UpdateProfileRequest;
+import com.platform.users.api.dto.UserAdminResponse;
 import com.platform.users.api.dto.UserMeResponse;
 import com.platform.users.application.UserService;
 import com.platform.users.domain.User;
 import com.platform.users.domain.UserProfile;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,6 +42,26 @@ public class UserController {
         User user = userService.getById(userId);
         UserProfile profile = userService.getProfile(userId);
         return UserMeResponse.of(user, profile);
+    }
+
+    /** UC-21 — PLATFORM_ADMIN only, not OPERATOR: the CDCF is explicit that an operator "ne peut
+     *  pas... suspendre une organisation sans escalade", and names only PLATFORM_ADMIN for UC-21. */
+    @PostMapping("/api/v1/users/{userId}/suspend")
+    @PreAuthorize("hasAuthority('ROLE_PLATFORM_ADMIN')")
+    public UserAdminResponse suspend(Authentication authentication, @PathVariable UUID userId) {
+        return UserAdminResponse.of(userService.suspend(currentUserId(authentication), userId));
+    }
+
+    @PostMapping("/api/v1/users/{userId}/reactivate")
+    @PreAuthorize("hasAuthority('ROLE_PLATFORM_ADMIN')")
+    public UserAdminResponse reactivate(Authentication authentication, @PathVariable UUID userId) {
+        return UserAdminResponse.of(userService.reactivate(currentUserId(authentication), userId));
+    }
+
+    @PostMapping("/api/v1/users/{userId}/ban")
+    @PreAuthorize("hasAuthority('ROLE_PLATFORM_ADMIN')")
+    public UserAdminResponse ban(Authentication authentication, @PathVariable UUID userId) {
+        return UserAdminResponse.of(userService.ban(currentUserId(authentication), userId));
     }
 
     private UUID currentUserId(Authentication authentication) {

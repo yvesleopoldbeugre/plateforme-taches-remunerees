@@ -3,9 +3,12 @@ package com.platform.organizations.application;
 import com.platform.common.exception.ConflictException;
 import com.platform.common.exception.ForbiddenException;
 import com.platform.common.exception.NotFoundException;
+import com.platform.organizations.domain.KycStatus;
 import com.platform.organizations.domain.Organization;
 import com.platform.organizations.domain.OrganizationMember;
 import com.platform.organizations.domain.OrganizationRole;
+import com.platform.organizations.domain.OrganizationStatus;
+import com.platform.organizations.domain.event.OrganizationStatusChangedEvent;
 import com.platform.organizations.infrastructure.OrganizationMemberRepository;
 import com.platform.organizations.infrastructure.OrganizationRepository;
 import com.platform.users.application.UserService;
@@ -13,6 +16,7 @@ import com.platform.users.domain.User;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,13 +35,15 @@ public class OrganizationService {
     private final OrganizationRepository organizationRepository;
     private final OrganizationMemberRepository memberRepository;
     private final UserService userService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public OrganizationService(OrganizationRepository organizationRepository,
                                 OrganizationMemberRepository memberRepository,
-                                UserService userService) {
+                                UserService userService, ApplicationEventPublisher eventPublisher) {
         this.organizationRepository = organizationRepository;
         this.memberRepository = memberRepository;
         this.userService = userService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional
@@ -120,5 +126,41 @@ public class OrganizationService {
     private OrganizationMember getMembership(UUID organizationId, UUID userId) {
         return memberRepository.findByOrganizationIdAndUserId(organizationId, userId)
                 .orElseThrow(() -> new NotFoundException("MEMBERSHIP_NOT_FOUND", "Aucune adhésion trouvée pour cet utilisateur."));
+    }
+
+    /** Admin back-office queue (Phase 9) — every organization awaiting verification. */
+    public List<Organization> listByStatus(OrganizationStatus status) {
+        return organizationRepository.findByStatusOrderByCreatedAtAsc(status);
+    }
+
+    @Transactional
+    public Organization verify(UUID actorId, UUID organizationId) {
+        return changeStatus(actorId, organizationId, null, Organization::verify);
+    }
+
+    @Transactional
+    public Organization rejectVerification(UUID actorId, UUID organizationId, String reason) {
+        return changeStatus(actorId, organizationId, reason, org -> org.rejectVerification(reason));
+    }
+
+    @Transactional
+    public Organization suspend(UUID actorId, UUID organizationId) {
+        return changeStatus(actorId, organizationId, null, Organization::suspend);
+    }
+
+    @Transactional
+    public Organization reactivate(UUID actorId, UUID organizationId) {
+        return changeStatus(actorId, organizationId, null, Organization::reactivate);
+    }
+
+    private Organization changeStatus(UUID actorId, UUID organizationId, String reason,
+                                       java.util.function.Consumer<Organization> transition) {
+        Organization organization = getOrganization(organizationId);
+        OrganizationStatus previousStatus = organization.getStatus();
+        KycStatus previousKyc = organization.getKycStatus();
+        transition.accept(organization);
+        eventPublisher.publishEvent(new OrganizationStatusChangedEvent(actorId, organizationId, previousStatus,
+                organization.getStatus(), previousKyc, organization.getKycStatus(), reason));
+        return organization;
     }
 }

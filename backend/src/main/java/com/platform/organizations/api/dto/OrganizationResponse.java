@@ -6,10 +6,10 @@ import java.util.UUID;
 
 public record OrganizationResponse(
         UUID id, String name, String legalName, String country,
-        String status, String kycStatus, Instant createdAt
+        String status, String kycStatus, String kycRejectionReason, Instant createdAt
 ) {
     public static OrganizationResponse of(Organization org) {
         return new OrganizationResponse(org.getId(), org.getName(), org.getLegalName(), org.getCountry(),
-                org.getStatus().name(), org.getKycStatus().name(), org.getCreatedAt());
+                org.getStatus().name(), org.getKycStatus().name(), org.getKycRejectionReason(), org.getCreatedAt());
     }
 }

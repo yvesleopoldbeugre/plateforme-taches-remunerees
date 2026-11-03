@@ -1,5 +1,6 @@
 package com.platform.organizations.domain;
 
+import com.platform.common.exception.ConflictException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -37,6 +38,9 @@ public class Organization {
     @Column(name = "kyc_status", nullable = false, length = 32)
     private KycStatus kycStatus = KycStatus.NOT_SUBMITTED;
 
+    @Column(name = "kyc_rejection_reason")
+    private String kycRejectionReason;
+
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
@@ -56,6 +60,41 @@ public class Organization {
 
     public boolean isSuspended() {
         return status == OrganizationStatus.SUSPENDED;
+    }
+
+    /**
+     * UC-21/US-014 — admin action, closing the gap flagged since Phase 3 ("la vérification admin
+     * ne conditionnera que la publication de campagnes... cette vérification elle-même n'est pas
+     * encore implémentée"). {@code CampaignService#publish} now actually checks this (ACTIVE) —
+     * see that method's comment for why it was always meant to.
+     */
+    public void verify() {
+        if (status == OrganizationStatus.SUSPENDED) {
+            throw new ConflictException("ORGANIZATION_SUSPENDED", "Réactivez d'abord l'organisation avant de la vérifier.");
+        }
+        this.status = OrganizationStatus.ACTIVE;
+        this.kycStatus = KycStatus.VERIFIED;
+        this.kycRejectionReason = null;
+    }
+
+    /** Only the KYC side moves — BR-003's PENDING_VERIFICATION exception still lets the owner
+     *  manage members and fix things up for a resubmission; only {@code publish} stays blocked. */
+    public void rejectVerification(String reason) {
+        this.kycStatus = KycStatus.REJECTED;
+        this.kycRejectionReason = reason;
+    }
+
+    public void suspend() {
+        this.status = OrganizationStatus.SUSPENDED;
+    }
+
+    /** Falls back to the status the KYC decision already implies, not unconditionally ACTIVE —
+     *  a never-verified (or rejected) organization coming out of suspension is still unverified. */
+    public void reactivate() {
+        if (status != OrganizationStatus.SUSPENDED) {
+            throw new ConflictException("ORGANIZATION_NOT_SUSPENDED", "Cette organisation n'est pas suspendue.");
+        }
+        this.status = kycStatus == KycStatus.VERIFIED ? OrganizationStatus.ACTIVE : OrganizationStatus.PENDING_VERIFICATION;
     }
 
     public UUID getId() {
@@ -80,6 +119,10 @@ public class Organization {
 
     public KycStatus getKycStatus() {
         return kycStatus;
+    }
+
+    public String getKycRejectionReason() {
+        return kycRejectionReason;
     }
 
     public UUID getCreatedBy() {

@@ -38,7 +38,11 @@ public class SecurityConfig {
                                 "/api/v1/auth/refresh",
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/verify-email",
-                                "/api/v1/auth/verify-email/resend").permitAll()
+                                "/api/v1/auth/verify-email/resend",
+                                // Phase 9 — no admin exists yet to authenticate as; gated instead
+                                // by a shared secret and "only while no PLATFORM_ADMIN exists"
+                                // (see AdminBootstrapService).
+                                "/api/v1/admin/bootstrap").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

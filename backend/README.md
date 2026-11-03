@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 8 — Paiements et retraits
+## État actuel : Phase 9 — Administration (back-office)
 
 Phase 1 (architecture et base technique) :
 
@@ -305,17 +305,82 @@ BR-002/BR-040 à BR-043 :
   en-tête → 400, avec en-tête → crédité, campagne → tâche → participation → approbation → petit
   retrait complété en un appel → grand retrait mis en revue puis approuvé par un opérateur).
 
-Explicitement reporté : KYC documentaire utilisateur au-delà d'un cumul de retraits (DAT §8.3
-le mentionne, mais aucun champ `kyc_status` n'existe sur `users` — seules les organisations en
-ont un depuis la Phase 3 ; construire ce flux documentaire appartient davantage à
-l'administration, Phase 9) ; webhook provider asynchrone (le provider simulé répond toujours
-synchrone et immédiatement — l'interface `PaymentProvider` est conçue pour qu'un vrai provider
-async n'oblige pas à reprendre `PaymentService`/`WithdrawalService`, mais le chemin webhook
-lui-même n'a rien à confirmer avant qu'un vrai provider existe) ; BR-044 (commission
-plateforme, cf. ci-dessus) ; bootstrap d'un premier compte `PLATFORM_ADMIN`.
+Explicitement reporté à l'époque : bootstrap d'un premier compte `PLATFORM_ADMIN` — soldé en
+Phase 9, voir plus bas. Toujours reporté : KYC documentaire **utilisateur** au-delà d'un cumul
+de retraits (DAT §8.3 le mentionne, mais aucun champ `kyc_status` n'existe sur `users` — seules
+les organisations en ont un, et leur vérification est maintenant un vrai flux admin, cf. Phase
+9 ; construire l'équivalent documentaire côté utilisateur reste hors scope) ; webhook provider
+asynchrone (le provider simulé répond toujours synchrone et immédiatement — l'interface
+`PaymentProvider` est conçue pour qu'un vrai provider async n'oblige pas à reprendre
+`PaymentService`/`WithdrawalService`, mais le chemin webhook lui-même n'a rien à confirmer avant
+qu'un vrai provider existe) ; BR-044 (commission plateforme, cf. ci-dessus).
 
-Pas encore implémenté (phases suivantes, DAT §11) : litiges, anti-fraude, administration,
-statistiques.
+Phase 9 (administration / back-office) — module `admin` (contrôleurs transverses,
+`AdminBootstrapService`) et `audit` (`AuditLog`, `AuditService`, `AuditLogListener`) —
+UC-21, US-014 :
+
+- **Bootstrap du premier `PLATFORM_ADMIN`** (reporté depuis la Phase 2 — jusqu'ici, seule une
+  mise à jour SQL directe sur `users.platform_role` permettait de tester les endpoints
+  réservés aux rôles plateforme) : `POST /api/v1/admin/bootstrap`, public par nécessité (aucun
+  admin n'existe encore pour s'authentifier), protégé par un secret partagé
+  (`platform.admin.bootstrap-secret` / env `ADMIN_BOOTSTRAP_SECRET`, vide par défaut — l'endpoint
+  refuse tout tant qu'il n'est pas positionné) et utilisable une seule fois : il refuse dès
+  qu'un `PLATFORM_ADMIN` existe déjà. La cible doit déjà avoir un compte (inscription normale) ;
+  bootstrap ne fait que le promouvoir.
+- **Vérification des organisations**, dette documentée depuis la Phase 3 ("la vérification
+  admin... ne conditionnera que la publication de campagnes — cette vérification elle-même
+  n'est pas encore implémentée, nécessite le module admin, Phase 9") : `Organization#verify`
+  (→ `ACTIVE`/`VERIFIED`) et `#rejectVerification(reason)` (`kyc_status` → `REJECTED`, le motif
+  est conservé — `V7__add_organization_kyc_rejection_reason.sql` ajoute la colonne manquante,
+  même geste que `V4`/`V6` pour les campagnes et les retraits). **`CampaignService#publish`
+  vérifie désormais réellement que l'organisation est `ACTIVE`** avant de réserver le budget —
+  jusqu'ici, n'importe quelle organisation `PENDING_VERIFICATION` pouvait publier dès qu'elle
+  avait les fonds ; ce n'est plus le cas, et les scripts de vérification manuelle des phases
+  précédentes doivent désormais appeler `verify` avant `publish`.
+- **Suspension/réactivation** (UC-21) côté `users` (`suspend`/`reactivate`/`ban`) et
+  `organizations` (`suspend`/`reactivate`, en plus de `verify`/`rejectVerification`) —
+  réservé à `PLATFORM_ADMIN` seul, pas `PLATFORM_OPERATOR` : le CDCF est explicite ("[l'opérateur]
+  ne peut pas... suspendre une organisation sans escalade", UC-21 ne nomme que `PLATFORM_ADMIN`).
+  Suspendre un utilisateur retire immédiatement l'accès aux actions déjà gardées par BR-002
+  (participation, retrait) — aucun changement requis côté `participations`/`withdrawals`, la
+  garde existait déjà, il manquait juste un moyen de déclencher le statut. La réactivation d'une
+  organisation retombe sur `ACTIVE` ou `PENDING_VERIFICATION` selon son `kyc_status` — jamais
+  `ACTIVE` sans trace d'une vérification réelle.
+- **Journal d'audit immuable** (`audit_logs`, déjà dans la V1) : `users`/`organizations`
+  publient `UserStatusChangedEvent`/`OrganizationStatusChangedEvent` (DAT §8.2 — les modules
+  métier publient, les modules transverses écoutent), `AuditLogListener` écrit une ligne
+  insert-only avec un instantané JSON avant/après. Comme `AutoValidationListener` en Phase 6,
+  une erreur d'écriture d'audit est absorbée (loggée, pas propagée) — un échec de sérialisation
+  JSON ne doit jamais empêcher de suspendre un compte frauduleux ; un mode strict ("l'audit doit
+  réussir") est un renforcement raisonnable laissé pour plus tard. Lu via
+  `GET /api/v1/admin/audit-logs?resourceType=&resourceId=`.
+- **Files d'attente admin cross-organisation** — c'est le critère de validation explicite de
+  cette phase ("un admin peut traiter chaque file de bout en bout", DAT §11) : la liste de
+  campagnes existante (`GET /campaigns?organizationId=`) ne peut pas répondre à "toutes les
+  campagnes en attente de revue, tous organismes confondus". `GET /api/v1/admin/organizations?
+  status=`, `GET /api/v1/admin/campaigns?status=` ajoutées dans le module `admin` pour ça ; la
+  file des retraits existait déjà depuis la Phase 8 (`GET /withdrawals?status=`).
+- `POST /api/v1/users/{id}/{suspend,reactivate,ban}`,
+  `POST /api/v1/organizations/{id}/{verify,reject-verification,suspend,reactivate}`,
+  `POST /api/v1/admin/bootstrap`, `GET /api/v1/admin/organizations?status=`,
+  `GET /api/v1/admin/campaigns?status=`, `GET /api/v1/admin/audit-logs?resourceType=&resourceId=`.
+- **Testé par `AdministrationTest`** (7 cas : bootstrap puis refus d'un second admin, cycle de
+  suspension/réactivation audité, refus de rétrograder un compte banni, refus de réactiver un
+  compte qui n'est ni suspendu ni banni, `publish` bloqué puis débloqué par la vérification
+  d'organisation, motif de rejet KYC conservé, suspension/réactivation d'organisation retombant
+  sur le bon statut) et vérifié par curl en local et dans le conteneur Docker reconstruit
+  (bootstrap avec mauvais secret puis bon secret puis refus d'un second admin, `publish` refusé
+  puis accepté après vérification, suspension d'un utilisateur vérifiée en l'empêchant
+  réellement de participer, journal d'audit relu après coup).
+
+Explicitement reporté : arbitrage des litiges (UC-15, module `disputes` — orphelin des 11
+phases de la roadmap, n'a pas de phase dédiée ; laissé pour une passe ultérieure) ; détection de
+fraude et escalade automatique (Phase 10) ; KYC documentaire utilisateur (cf. ci-dessus) ;
+capture de l'adresse IP sur les lignes d'audit (`audit_logs.ip_address` existe, mais aucun
+filtre de requête ne la renseigne encore) ; mode audit strict (cf. ci-dessus) ; écran de gestion
+des rôles plateforme au-delà du bootstrap initial.
+
+Pas encore implémenté (phases suivantes, DAT §11) : anti-fraude, statistiques.
 
 ## Prérequis
 

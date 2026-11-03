@@ -2,13 +2,16 @@ package com.platform.campaigns.application;
 
 import com.platform.campaigns.domain.Campaign;
 import com.platform.campaigns.domain.CampaignEligibilityCriteria;
+import com.platform.campaigns.domain.CampaignStatus;
 import com.platform.campaigns.infrastructure.CampaignEligibilityCriteriaRepository;
 import com.platform.campaigns.infrastructure.CampaignRepository;
 import com.platform.common.exception.BusinessException;
 import com.platform.common.exception.ConflictException;
 import com.platform.common.exception.NotFoundException;
 import com.platform.organizations.application.OrganizationService;
+import com.platform.organizations.domain.Organization;
 import com.platform.organizations.domain.OrganizationRole;
+import com.platform.organizations.domain.OrganizationStatus;
 import com.platform.wallet.application.WalletService;
 import com.platform.wallet.domain.ReferenceType;
 import com.platform.wallet.domain.WalletOwnerType;
@@ -120,14 +123,29 @@ public class CampaignService {
      * here. BR-010 is enforced right here, before the state transition: the organization's
      * available balance must cover the campaign's budget, and that amount is actually reserved
      * on its wallet — closing the debt flagged since Phase 5 (see {@link Campaign#publish()}).
+     *
+     * <p>Also requires the organization to be {@code ACTIVE} (verified) — the check Phase 3's
+     * own comment on {@code OrganizationService} always said belonged here ("la vérification
+     * admin... ne conditionnera que la publication de campagnes"), closed now that Phase 9
+     * builds the admin verification action that can actually produce an {@code ACTIVE} org.
      */
     @Transactional
     public Campaign publish(UUID campaignId) {
         Campaign campaign = getCampaign(campaignId);
+        Organization organization = organizationService.getOrganization(campaign.getOrganizationId());
+        if (organization.getStatus() != OrganizationStatus.ACTIVE) {
+            throw new BusinessException("ORGANIZATION_NOT_VERIFIED", HttpStatus.CONFLICT,
+                    "L'organisation doit être vérifiée par la plateforme avant de publier une campagne.");
+        }
         walletService.reserve(WalletOwnerType.ORGANIZATION, campaign.getOrganizationId(), campaign.getBudgetTotal(),
                 ReferenceType.CAMPAIGN_BUDGET, campaignId, "campaign-reserve:" + campaignId);
         campaign.publish();
         return campaign;
+    }
+
+    /** Admin back-office queue (Phase 9) — every campaign pending review, across all organizations. */
+    public List<Campaign> listByStatus(CampaignStatus status) {
+        return campaignRepository.findByStatusOrderByCreatedAtAsc(status);
     }
 
     @Transactional
