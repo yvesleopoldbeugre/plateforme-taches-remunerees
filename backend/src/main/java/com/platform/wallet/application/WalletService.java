@@ -186,6 +186,11 @@ public class WalletService {
         }
     }
 
+    /** Phase 11 — platform KPI ("volume financier transité"). See {@code WalletTransactionRepository#sumAmountByType}. */
+    public BigDecimal totalCreditedVolume() {
+        return transactionRepository.sumAmountByType(TransactionType.CREDIT);
+    }
+
     /**
      * Replays a wallet's full ledger from scratch and recomputes what {@code available_balance}
      * and {@code reserved_balance} should be — the Phase 7 roadmap milestone ("Invariant solde =

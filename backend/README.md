@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 10 — Anti-fraude
+## État actuel : Phase 11 — Statistiques (MVP complet, les 11 phases de la roadmap sont closes)
 
 Phase 1 (architecture et base technique) :
 
@@ -433,7 +433,60 @@ même logique que les types de transaction `DEBIT`/`FEE`/`REVERSAL`/`ADJUSTMENT`
 Phase 7 ; arbitrage des litiges (cf. ci-dessus) ; score de risque agrégé par utilisateur (chaque
 `FraudEvent` reste isolé, pas de cumul pondéré par compte).
 
-Pas encore implémenté (phases suivantes, DAT §11) : statistiques.
+Phase 11 (statistiques) — module `statistics` (`OrganizationStatisticsService`,
+`UserStatisticsService`, `PlatformStatisticsService`) — UC-19, UC-20, CDCF §15 :
+
+- **Module de lecture pure** : aucune table propre, aucun état — le package-info le dit
+  explicitement. Chaque service compose les services existants (`campaigns`/`tasks`/
+  `participations` pour l'organisation, `participations`/`wallet`/`withdrawals` pour
+  l'utilisateur, `users`/`organizations`/`wallet`/`fraud` pour la plateforme) plutôt que
+  d'interroger leurs dépôts directement — même discipline de frontière de module que partout
+  ailleurs (DAT §8.2). Dépendance à sens unique vers tous ces modules ; aucun n'en dépend.
+- **KPI Organisation** (`GET /organizations/{id}/statistics`, tout membre actif) : campagnes
+  créées/actives, participations totales, taux de validation/rejet (rapportés aux seules
+  participations tranchées APPROVED+REJECTED — un rejet et une validation sont complémentaires
+  par construction), taux d'abandon (CANCELLED+EXPIRED rapporté au total brut, lui, car l'abandon
+  est un phénomène du parcours entier), budget dépensé, coût moyen par participation
+  (`budget_consumed` / nombre de participations APPROVED — le seul sous-ensemble qui a
+  réellement coûté de l'argent). Hypothèses explicites, le dossier ne donnant pas de formule.
+- **KPI Utilisateur** (`GET /users/me/statistics`, soi-même uniquement) : tâches
+  réalisées (`submitted_at` non nul)/validées/rejetées, taux de réussite, revenu total et moyen
+  (directement depuis `wallets.lifetime_earned`, corrigé en Phase 8), montant et fréquence des
+  retraits (retraits `COMPLETED`, total cumulé — une vraie fréquence temporelle, par mois ou par
+  semaine, demanderait un découpage hors scope de cette phase).
+- **KPI Plateforme** (`GET /admin/statistics`, `PLATFORM_ADMIN`/`OPERATOR`) : utilisateurs et
+  organisations actifs, volume financier transité (somme de tous les `wallet_transactions` de
+  type `CREDIT` — couvre à la fois les dépôts d'organisation et les récompenses, donc tout
+  l'argent qui est jamais entré dans le système de wallets), événements de fraude par niveau de
+  risque (Phase 10). **Deux champs du dossier manquent délibérément**, documentés plutôt que
+  simulés par un zéro trompeur : les commissions perçues (`commissionsCollected` vaut toujours
+  0 — BR-044 reste reportée depuis la Phase 7) et les litiges/taux de résolution (le module
+  `disputes` n'a jamais été implémenté, orphelin des 11 phases de la roadmap — aucun champ
+  n'est exposé pour ça plutôt qu'un 0 qui se lirait comme "aucun litige" au lieu de
+  "fonctionnalité absente").
+- **Testé par `StatisticsTest`** (3 cas — c'est le critère de validation explicite de cette
+  phase, "les KPI sont affichés et corrects sur données de test") : fait tourner une vraie
+  campagne via les services réels (publish → approve/reject/cancel), pas du SQL brut, pour que
+  chaque nombre attendu soit connu par construction et pas seulement "plausible à l'œil" —
+  validationRate/rejectionRate/abandonRate/budgetSpent vérifiés sur un mélange APPROVED+
+  REJECTED+CANCELLED, revenu/taux de réussite vérifiés côté utilisateur, compteurs plateforme
+  vérifiés en delta (avant/après une action) pour rester indépendants de l'ordre d'exécution des
+  tests dans la même classe. Les 34 tests du projet passent. Vérifié aussi par curl en local et
+  dans le conteneur Docker reconstruit (campagne publiée → participation approuvée → les trois
+  endpoints renvoient des chiffres qui correspondent exactement au scénario : 1 campagne active,
+  validationRate 1.0, revenu utilisateur = récompense exacte, volume financier plateforme =
+  dépôt + récompense).
+
+Explicitement reporté : rien de nouveau — cette phase clôt la roadmap en 11 phases du DAT. Les
+reports accumulés au fil des phases restent documentés chacun dans sa propre section : MFA/TOTP
+et réinitialisation de mot de passe (Phase 2), le vrai `PaymentProvider` async (Phase 8), le KYC
+documentaire utilisateur (Phases 8-9), BR-050/litiges (Phase 10), et quelques autres — voir
+chaque section ci-dessus pour le détail et la raison de chacun.
+
+Pas encore implémenté : rien dans le périmètre des 11 phases. Ce qui reste explicitement hors
+MVP (litiges/UC-15, BR-044, BR-050, KYC utilisateur, MFA, réinitialisation de mot de passe,
+provider de paiement réel) est listé phase par phase ci-dessus, pas cette ligne — contrairement
+aux dix phases précédentes, il n'y a plus de "phase suivante" où les reporter.
 
 ## Prérequis
 

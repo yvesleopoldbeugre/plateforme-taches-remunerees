@@ -43,6 +43,10 @@ public class FraudService {
         return repository.findByStatusOrderByDetectedAtAsc(status);
     }
 
+    public long countByRiskLevel(FraudRiskLevel riskLevel) {
+        return repository.countByRiskLevel(riskLevel);
+    }
+
     @Transactional
     public FraudEvent markReviewed(UUID reviewerId, UUID fraudEventId, String note) {
         FraudEvent event = getById(fraudEventId);

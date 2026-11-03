@@ -2,6 +2,7 @@ package com.platform.users.infrastructure;
 
 import com.platform.users.domain.PlatformRole;
 import com.platform.users.domain.User;
+import com.platform.users.domain.UserStatus;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -15,4 +16,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     boolean existsByPhone(String phone);
 
     boolean existsByPlatformRole(PlatformRole platformRole);
+
+    long countByStatus(UserStatus status);
 }

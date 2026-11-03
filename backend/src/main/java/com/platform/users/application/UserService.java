@@ -111,6 +111,11 @@ public class UserService {
         return userRepository.existsByPlatformRole(PlatformRole.PLATFORM_ADMIN);
     }
 
+    /** Phase 11 — platform KPI ("utilisateurs actifs"). */
+    public long countByStatus(UserStatus status) {
+        return userRepository.countByStatus(status);
+    }
+
     /** Admin bootstrap only (see {@code AdminBootstrapService}) — not exposed as a general-purpose
      *  role grant, since there is no admin-facing "manage roles" screen in this MVP. */
     @Transactional
