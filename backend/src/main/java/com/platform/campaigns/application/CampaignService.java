@@ -107,4 +107,32 @@ public class CampaignService {
         campaign.submitForReview();
         return campaign;
     }
+
+    /**
+     * Platform-role authorization is enforced by {@code @PreAuthorize} on the controller, not
+     * here — this method only performs the state transition. See {@link Campaign#publish()} for
+     * the BR-010 caveat.
+     */
+    @Transactional
+    public Campaign publish(UUID campaignId) {
+        Campaign campaign = getCampaign(campaignId);
+        campaign.publish();
+        return campaign;
+    }
+
+    @Transactional
+    public Campaign reject(UUID campaignId, String reason) {
+        Campaign campaign = getCampaign(campaignId);
+        campaign.reject(reason);
+        return campaign;
+    }
+
+    @Transactional
+    public Campaign returnToDraft(UUID campaignId, UUID requesterId) {
+        Campaign campaign = getCampaign(campaignId);
+        organizationService.assertActiveMembership(campaign.getOrganizationId(), requesterId,
+                OrganizationRole.OWNER, OrganizationRole.MANAGER);
+        campaign.returnToDraft();
+        return campaign;
+    }
 }

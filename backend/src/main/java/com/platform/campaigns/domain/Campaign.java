@@ -60,6 +60,9 @@ public class Campaign {
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
+    @Column(name = "rejection_reason")
+    private String rejectionReason;
+
     @Version
     @Column(nullable = false)
     private int version;
@@ -101,6 +104,42 @@ public class Campaign {
     public void submitForReview() {
         assertEditable();
         this.status = CampaignStatus.PENDING_REVIEW;
+        this.updatedAt = Instant.now();
+    }
+
+    private void assertPendingReview() {
+        if (status != CampaignStatus.PENDING_REVIEW) {
+            throw new ConflictException("CAMPAIGN_NOT_PENDING_REVIEW",
+                    "La campagne doit être en attente de revue (statut actuel : " + status + ").");
+        }
+    }
+
+    /**
+     * ⚠ Ne vérifie pas encore BR-010 (budget_total ≤ solde disponible de l'organisation) : cette
+     * vérification et la réservation réelle sur le wallet seront ajoutées en Phase 7, quand le
+     * module wallet existera. Pour l'instant, publier ne fait que changer le statut et marquer
+     * le budget comme réservé pour la comptabilité de la campagne elle-même.
+     */
+    public void publish() {
+        assertPendingReview();
+        this.status = CampaignStatus.PUBLISHED;
+        this.budgetReserved = this.budgetTotal;
+        this.updatedAt = Instant.now();
+    }
+
+    public void reject(String reason) {
+        assertPendingReview();
+        this.status = CampaignStatus.REJECTED;
+        this.rejectionReason = reason;
+        this.updatedAt = Instant.now();
+    }
+
+    public void returnToDraft() {
+        if (status != CampaignStatus.REJECTED) {
+            throw new ConflictException("CAMPAIGN_NOT_REJECTED",
+                    "Seule une campagne rejetée peut repasser en brouillon (statut actuel : " + status + ").");
+        }
+        this.status = CampaignStatus.DRAFT;
         this.updatedAt = Instant.now();
     }
 
@@ -154,6 +193,10 @@ public class Campaign {
 
     public UUID getCreatedBy() {
         return createdBy;
+    }
+
+    public String getRejectionReason() {
+        return rejectionReason;
     }
 
     public Instant getCreatedAt() {

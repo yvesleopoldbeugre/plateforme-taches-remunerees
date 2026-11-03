@@ -4,6 +4,7 @@ import com.platform.campaigns.api.dto.CampaignResponse;
 import com.platform.campaigns.api.dto.CreateCampaignRequest;
 import com.platform.campaigns.api.dto.EligibilityCriteriaRequest;
 import com.platform.campaigns.api.dto.EligibilityCriteriaResponse;
+import com.platform.campaigns.api.dto.RejectCampaignRequest;
 import com.platform.campaigns.application.CampaignService;
 import com.platform.campaigns.domain.Campaign;
 import com.platform.campaigns.domain.CampaignEligibilityCriteria;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -73,6 +75,28 @@ public class CampaignController {
         long taskCount = taskService.countByCampaign(campaignId);
         Campaign campaign = campaignService.submitForReview(campaignId, currentUserId(authentication), (int) taskCount);
         return CampaignResponse.of(campaign);
+    }
+
+    /**
+     * ⚠ Statut uniquement — ne vérifie pas encore le solde de l'organisation (BR-010), cf.
+     * {@link Campaign#publish()}. Réservé aux rôles plateforme en attendant le module admin
+     * (Phase 9) ; la réservation budgétaire réelle arrive avec le module wallet (Phase 7).
+     */
+    @PostMapping("/{campaignId}/publish")
+    @PreAuthorize("hasAnyAuthority('ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_OPERATOR')")
+    public CampaignResponse publish(@PathVariable UUID campaignId) {
+        return CampaignResponse.of(campaignService.publish(campaignId));
+    }
+
+    @PostMapping("/{campaignId}/reject")
+    @PreAuthorize("hasAnyAuthority('ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_OPERATOR')")
+    public CampaignResponse reject(@PathVariable UUID campaignId, @Valid @RequestBody RejectCampaignRequest request) {
+        return CampaignResponse.of(campaignService.reject(campaignId, request.reason()));
+    }
+
+    @PostMapping("/{campaignId}/return-to-draft")
+    public CampaignResponse returnToDraft(Authentication authentication, @PathVariable UUID campaignId) {
+        return CampaignResponse.of(campaignService.returnToDraft(campaignId, currentUserId(authentication)));
     }
 
     private UUID currentUserId(Authentication authentication) {

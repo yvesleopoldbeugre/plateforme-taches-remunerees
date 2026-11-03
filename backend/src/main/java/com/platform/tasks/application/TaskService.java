@@ -67,4 +67,15 @@ public class TaskService {
     public long countByCampaign(UUID campaignId) {
         return taskRepository.countByCampaignId(campaignId);
     }
+
+    /** Atomic, see {@link TaskRepository#tryReserveSlot}. Runs in the caller's transaction. */
+    @Transactional
+    public boolean tryReserveSlot(UUID taskId) {
+        return taskRepository.tryReserveSlot(taskId) == 1;
+    }
+
+    @Transactional
+    public void releaseSlot(UUID taskId) {
+        taskRepository.releaseSlot(taskId);
+    }
 }

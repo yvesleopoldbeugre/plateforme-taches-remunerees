@@ -3,7 +3,7 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 4 — Campagnes et tâches
+## État actuel : Phase 5 — Participations et soumissions
 
 Phase 1 (architecture et base technique) :
 
@@ -83,14 +83,62 @@ Phase 4 (campagnes et tâches) :
   `MethodArgumentTypeMismatchException` renvoient désormais 400 (au lieu de 500) dans le
   `GlobalExceptionHandler`.
 
-Explicitement reporté : l'approbation/le rejet d'une campagne (PENDING_REVIEW → PUBLISHED ou
-REJECTED) exige la réservation du budget sur le portefeuille de l'organisation (BR-010), donc
-le module `wallet` (Phase 7) — ce n'est pas un oubli, c'est la dépendance annoncée dans la
-roadmap du DAT. Pause/annulation/statistiques de campagne suivront une fois des campagnes
-publiées possibles.
+Phase 5 (participations et soumissions) a avancé plus vite que prévu sur la publication de
+campagne, pour la raison suivante : son propre critère de validation ("BR-020/021/022
+vérifiées par tests de concurrence") exige des tâches réellement participables, donc des
+campagnes `PUBLISHED` — en Phase 4 ce chemin était resté bloqué derrière le module `wallet`
+(Phase 7). Le déblocage choisi, documenté partout où il s'applique (code et ici) :
 
-Pas encore implémenté (phases suivantes, DAT §11) : participations/soumissions, validation,
-wallet/ledger, paiements, anti-fraude.
+- `publish`/`reject`/`return-to-draft` sont implémentés dès maintenant, réservés aux rôles
+  `PLATFORM_ADMIN`/`PLATFORM_OPERATOR` (`@PreAuthorize`, méthode de sécurité activée dans
+  `SecurityConfig`). ⚠ `publish` ne vérifie **pas encore** BR-010 (budget_total ≤ solde
+  disponible de l'organisation) : c'est un simple changement de statut tant que le module
+  `wallet` n'existe pas. La vérification réelle sera ajoutée en Phase 7.
+  `V4__add_campaign_rejection_reason.sql` ajoute la colonne manquante pour stocker le motif.
+- Aucun endpoint ne permet encore d'attribuer `PLATFORM_ADMIN`/`PLATFORM_OPERATOR` (pas de
+  bootstrap admin) — testé via une mise à jour SQL directe sur `users.platform_role`.
+
+Modules `participations` (`TaskParticipation`, `ParticipationService`) et `submissions`
+(`TaskSubmission`, `SubmissionService`) — UC-09, UC-10 :
+
+- BR-022 (jamais plus de participants que de places) : mise à jour SQL conditionnelle
+  atomique (`UPDATE ... WHERE current_participants < max_participants`), pas de verrou
+  pessimiste — voir `TaskRepository.tryReserveSlot`.
+- BR-020 (une seule participation active par utilisateur et par tâche) : appliqué par l'index
+  unique partiel `uq_active_participation` (déjà en V1) ; la violation de contrainte est
+  traduite en `ALREADY_PARTICIPATING`, et comme `participate()` est `@Transactional`, l'échec
+  annule aussi la réservation de place faite juste avant — aucune libération manuelle requise.
+- BR-021 (expiration de réservation) : `ReservationExpiryScheduler` (`@Scheduled`, toutes les
+  60s par défaut) libère la place des réservations dépassées.
+- BR-051 (doublon de soumission) : détecté par hash SHA-256 du contenu, **par tâche** —
+  `V5__add_task_submissions_task_id.sql` dénormalise `task_id` sur `task_submissions` pour que
+  le module `submissions` n'ait pas besoin d'interroger le module `participations`. Plus
+  strict que l'intention originale du dossier ("bloque la validation automatique") : rejette
+  la soumission d'emblée, faute de moteur de validation auto (Phase 6) ou de module fraude
+  (Phase 10) pour faire autrement — à revisiter alors.
+- BR-001/BR-002 : participer exige un compte `ACTIVE`-compatible (email + téléphone vérifiés,
+  ni suspendu ni banni).
+- **Testé par `ParticipationConcurrencyTest`** (le critère de validation explicite de cette
+  phase) : 100 tentatives concurrentes sur une tâche à 10 places → exactement 10 réussissent,
+  90 échouent en `TASK_FULL` ; 20 tentatives concurrentes du même utilisateur → exactement 1
+  réussit, 19 échouent en `ALREADY_PARTICIPATING` ; une réservation expirée libère réellement
+  sa place (une nouvelle participation peut la reprendre).
+- `POST /api/v1/tasks/{id}/participate`, `GET /api/v1/participations/me`,
+  `GET /api/v1/participations/{id}`, `POST /api/v1/participations/{id}/submission`,
+  `POST /api/v1/participations/{id}/cancel`, `GET /api/v1/tasks/{id}/participations` (membres
+  actifs de l'organisation uniquement).
+
+Correctif transverse : `AuthorizationDeniedException` (levée par `@PreAuthorize` en cas de
+refus) renvoyait 500 au lieu de 403 — `GlobalExceptionHandler` la gère maintenant.
+
+Explicitement reporté : la vérification de solde BR-010 sur `publish` (Phase 7) ; bootstrap
+d'un premier compte `PLATFORM_ADMIN` ; `IN_PROGRESS` reste un statut inutilisé (le flux va de
+`RESERVED` à `SUBMITTED` directement, comme sur le diagramme de séquence du dossier) ;
+passage `FULL → PUBLISHED` d'une campagne à la libération d'une place (US-039, priorité
+SHOULD).
+
+Pas encore implémenté (phases suivantes, DAT §11) : validation (file de revue manuelle,
+litiges), wallet/ledger, paiements, anti-fraude.
 
 ## Prérequis
 
