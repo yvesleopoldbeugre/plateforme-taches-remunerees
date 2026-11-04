@@ -623,3 +623,68 @@ mvn test
 
 Le test de contexte démarre un conteneur PostgreSQL jetable (Testcontainers) et vérifie que
 l'application boote avec la migration Flyway appliquée.
+
+## Déploiement continu (VPS + GitHub Actions)
+
+Pipeline (`.github/workflows/backend-deploy.yml`), déclenché à chaque push sur `main` qui
+touche `backend/**` :
+
+1. **test** — `mvn test`.
+2. **build-and-push** — construit l'image Docker (`backend/Dockerfile`) et la publie sur
+   GitHub Container Registry : `ghcr.io/yvesleopoldbeugre/plateforme-taches-remunerees-backend`,
+   taguée `latest` et avec le SHA court du commit (rollback possible).
+3. **deploy** — se connecte en SSH au VPS et exécute `docker compose pull/up` sur
+   `backend/docker-compose.prod.yml` (stack de prod : Postgres + Redis + app, l'image étant
+   tirée depuis GHCR plutôt que reconstruite sur place).
+
+### Secrets GitHub à configurer (Settings → Secrets and variables → Actions)
+
+| Secret | Valeur |
+| --- | --- |
+| `VPS_HOST` | IP ou domaine du VPS |
+| `VPS_USER` | utilisateur SSH de déploiement |
+| `VPS_SSH_KEY` | clé privée SSH dédiée (voir ci-dessous) |
+| `VPS_PORT` | port SSH, si différent de 22 (optionnel) |
+| `VPS_DEPLOY_PATH` | dossier sur le VPS contenant `docker-compose.prod.yml` + `.env`, ex. `/opt/plateforme-taches` |
+
+### Mise en place initiale du VPS (une seule fois)
+
+```bash
+# 1. Sur ta machine : générer une clé SSH dédiée au déploiement (sans passphrase, lue par CI)
+ssh-keygen -t ed25519 -f deploy_key -C "github-actions-deploy" -N ""
+# -> colle deploy_key (clé privée) dans le secret GitHub VPS_SSH_KEY
+# -> ajoute deploy_key.pub au ~/.ssh/authorized_keys de l'utilisateur de déploiement sur le VPS
+
+# 2. Sur le VPS : installer Docker + Docker Compose (Ubuntu/Debian)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER   # puis se reconnecter
+
+# 3. Sur le VPS : préparer le dossier de déploiement
+sudo mkdir -p /opt/plateforme-taches && sudo chown $USER:$USER /opt/plateforme-taches
+```
+
+Copier ensuite `backend/docker-compose.prod.yml` et `backend/.env.prod.example` vers le VPS :
+
+```bash
+scp backend/docker-compose.prod.yml backend/.env.prod.example \
+    <user>@<vps>:/opt/plateforme-taches/
+```
+
+Sur le VPS, renommer `.env.prod.example` en `.env` et y mettre de vraies valeurs
+(`DB_PASSWORD`, `JWT_SECRET` fort, laisser `ADMIN_BOOTSTRAP_SECRET` vide une fois le premier
+PLATFORM_ADMIN créé). Rendre le paquet GHCR public une fois la première image poussée
+(GitHub → ton profil → Packages → le paquet → Package settings → Change visibility → Public),
+sinon le `docker compose pull` échouera sur le VPS faute d'authentification au registry.
+
+Premier démarrage manuel sur le VPS (avant même le premier passage du workflow) :
+
+```bash
+cd /opt/plateforme-taches
+docker compose -f docker-compose.prod.yml pull app   # si une image a déjà été poussée
+docker compose -f docker-compose.prod.yml up -d
+curl http://localhost:8080/actuator/health
+```
+
+Les pushes suivants sur `main` redéploient automatiquement. Un reverse proxy (nginx/Caddy) et
+HTTPS (Let's Encrypt) ne sont pas couverts ici — à ajouter séparément si un nom de domaine
+pointe vers le VPS.

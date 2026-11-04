@@ -10,6 +10,8 @@ Marketplace de micro-tâches et de campagnes rémunérées (MVP), contexte Afriq
 - [`backend/`](backend/) — backend Spring Boot (monolithe modulaire). Voir
   [`backend/README.md`](backend/README.md) pour le démarrage local. Documentation API
   interactive (Swagger/OpenAPI) sur `/swagger-ui/index.html` une fois l'app démarrée.
+  Déploiement continu sur VPS via GitHub Actions (`.github/workflows/backend-deploy.yml`),
+  voir [`backend/README.md`](backend/README.md#déploiement-continu-vps--github-actions).
 
 ## Avancement (roadmap DAT §11)
 
