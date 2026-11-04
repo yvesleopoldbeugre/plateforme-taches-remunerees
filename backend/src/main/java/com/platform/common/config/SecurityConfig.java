@@ -14,9 +14,10 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
- * Security baseline: stateless API, actuator health exposed, the pre-authentication {@code auth}
- * endpoints public, everything else (including the two phone-verification endpoints, which need
- * to know who is asking) requires a valid JWT — CDCT §8 / DAT §5.
+ * Security baseline: stateless API, actuator health exposed, Swagger UI exposed, the
+ * pre-authentication {@code auth} endpoints public, everything else (including the two
+ * phone-verification endpoints, which need to know who is asking) requires a valid JWT —
+ * CDCT §8 / DAT §5.
  */
 @Configuration
 @EnableWebSecurity
@@ -32,6 +33,7 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/register",
                                 "/api/v1/auth/login",

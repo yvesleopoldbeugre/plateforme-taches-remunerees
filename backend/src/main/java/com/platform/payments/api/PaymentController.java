@@ -4,6 +4,9 @@ import com.platform.payments.api.dto.InitiateDepositRequest;
 import com.platform.payments.api.dto.PaymentResponse;
 import com.platform.payments.application.PaymentService;
 import com.platform.payments.domain.Payment;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
  * in this phase.
  */
 @RestController
+@Tag(name = "Paiements (dépôts)", description = "Dépôt de budget par une organisation, via "
+        + "l'abstraction PaymentProvider (DAT §8.3, H5 du CDCF) — un seul provider \"SIMULATED\" pour l'instant.")
 public class PaymentController {
 
     private final PaymentService paymentService;
@@ -32,8 +37,12 @@ public class PaymentController {
         this.paymentService = paymentService;
     }
 
+    @Operation(summary = "Déposer un budget sur le portefeuille de l'organisation", description = "Réservé "
+            + "à OWNER/MANAGER. L'en-tête Idempotency-Key est obligatoire — un rejeu renvoie le même "
+            + "paiement sans créditer deux fois.")
     @PostMapping("/api/v1/organizations/{organizationId}/payments")
     public ResponseEntity<PaymentResponse> deposit(Authentication authentication, @PathVariable UUID organizationId,
+                                                      @Parameter(description = "Clé d'idempotence fournie par l'appelant (DAT §8.3)")
                                                       @RequestHeader("Idempotency-Key") String idempotencyKey,
                                                       @Valid @RequestBody InitiateDepositRequest request) {
         Payment payment = paymentService.initiateDeposit(organizationId, currentUserId(authentication),
@@ -41,6 +50,7 @@ public class PaymentController {
         return ResponseEntity.status(HttpStatus.CREATED).body(PaymentResponse.of(payment));
     }
 
+    @Operation(summary = "Lister les dépôts d'une organisation")
     @GetMapping("/api/v1/organizations/{organizationId}/payments")
     public List<PaymentResponse> list(Authentication authentication, @PathVariable UUID organizationId) {
         return paymentService.listByOrganization(organizationId, currentUserId(authentication))

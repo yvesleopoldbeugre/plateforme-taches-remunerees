@@ -8,6 +8,8 @@ import com.platform.participations.application.ParticipationService;
 import com.platform.participations.domain.TaskParticipation;
 import com.platform.tasks.application.TaskService;
 import com.platform.tasks.domain.Task;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
@@ -23,6 +25,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
+@Tag(name = "Participations", description = "Réservation d'une place sur une tâche, dépôt de preuve, "
+        + "annulation (UC-09, UC-10, BR-020 à BR-022).")
 public class ParticipationController {
 
     private final ParticipationService participationService;
@@ -38,12 +42,16 @@ public class ParticipationController {
         this.organizationService = organizationService;
     }
 
+    @Operation(summary = "Réserver une place sur une tâche", description = "BR-020/BR-022 — une seule "
+            + "participation active par utilisateur et par tâche, jamais plus de places que de capacité, "
+            + "garanti par mise à jour SQL conditionnelle, pas verrou pessimiste.")
     @PostMapping("/tasks/{taskId}/participate")
     public ResponseEntity<ParticipationResponse> participate(Authentication authentication, @PathVariable UUID taskId) {
         TaskParticipation participation = participationService.participate(taskId, currentUserId(authentication));
         return ResponseEntity.status(HttpStatus.CREATED).body(ParticipationResponse.of(participation));
     }
 
+    @Operation(summary = "Lister mes participations")
     @GetMapping("/participations/me")
     public List<ParticipationResponse> myParticipations(Authentication authentication) {
         return participationService.getMyParticipations(currentUserId(authentication)).stream()
@@ -51,6 +59,7 @@ public class ParticipationController {
                 .toList();
     }
 
+    @Operation(summary = "Consulter une participation", description = "Réservé au participant lui-même.")
     @GetMapping("/participations/{participationId}")
     public ParticipationResponse get(Authentication authentication, @PathVariable UUID participationId) {
         TaskParticipation participation = participationService.getParticipation(participationId);
@@ -58,6 +67,9 @@ public class ParticipationController {
         return ParticipationResponse.of(participation);
     }
 
+    @Operation(summary = "Déposer une preuve de réalisation", description = "BR-021 — échoue en 410 si le "
+            + "délai de réservation est dépassé ; BR-051 — un contenu identique à une soumission antérieure "
+            + "sur la même tâche est marqué comme doublon (pas rejeté) et ne sera jamais auto-validé.")
     @PostMapping("/participations/{participationId}/submission")
     public ResponseEntity<ParticipationResponse> submit(Authentication authentication, @PathVariable UUID participationId,
                                                           @Valid @RequestBody SubmissionRequest request) {
@@ -66,6 +78,7 @@ public class ParticipationController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ParticipationResponse.of(participation));
     }
 
+    @Operation(summary = "Annuler ma participation", description = "Libère la place réservée.")
     @PostMapping("/participations/{participationId}/cancel")
     public ResponseEntity<Void> cancel(Authentication authentication, @PathVariable UUID participationId) {
         participationService.cancel(participationId, currentUserId(authentication));
@@ -73,6 +86,8 @@ public class ParticipationController {
     }
 
     /** Visible to active members of the task's owning organization only — not the public. */
+    @Operation(summary = "Lister les participations d'une tâche", description = "Réservé aux membres actifs "
+            + "de l'organisation propriétaire de la tâche.")
     @GetMapping("/tasks/{taskId}/participations")
     public List<ParticipationResponse> listByTask(Authentication authentication, @PathVariable UUID taskId) {
         Task task = taskService.getTask(taskId);

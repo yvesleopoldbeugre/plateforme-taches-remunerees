@@ -8,6 +8,8 @@ import com.platform.participations.domain.TaskParticipation;
 import com.platform.submissions.api.dto.TaskSubmissionResponse;
 import com.platform.submissions.application.SubmissionService;
 import com.platform.tasks.application.TaskService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/v1/participations/{participationId}/submissions")
+@Tag(name = "Soumissions", description = "Consultation des preuves déposées pour une participation (UC-12).")
 public class SubmissionController {
 
     private final SubmissionService submissionService;
@@ -42,6 +45,8 @@ public class SubmissionController {
         this.objectMapper = objectMapper;
     }
 
+    @Operation(summary = "Lister les preuves d'une participation", description = "Visible par le "
+            + "participant lui-même, ou par un membre actif de l'organisation propriétaire de la tâche.")
     @GetMapping
     public List<TaskSubmissionResponse> list(Authentication authentication, @PathVariable UUID participationId) {
         UUID requesterId = UUID.fromString(authentication.getName());

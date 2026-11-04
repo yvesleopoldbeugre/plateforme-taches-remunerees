@@ -8,7 +8,8 @@ Marketplace de micro-tâches et de campagnes rémunérées (MVP), contexte Afriq
   technique, diagrammes de cas d'utilisation et de séquence, architecture technique, DAT,
   user stories. Voir [`docs/sources/`](docs/sources/) pour les scripts de génération.
 - [`backend/`](backend/) — backend Spring Boot (monolithe modulaire). Voir
-  [`backend/README.md`](backend/README.md) pour le démarrage local.
+  [`backend/README.md`](backend/README.md) pour le démarrage local. Documentation API
+  interactive (Swagger/OpenAPI) sur `/swagger-ui/index.html` une fois l'app démarrée.
 
 ## Avancement (roadmap DAT §11)
 

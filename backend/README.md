@@ -589,6 +589,20 @@ surchargez-le sans modifier le fichier :
 APP_PORT=18080 POSTGRES_PORT=5433 REDIS_PORT=6380 docker compose up --build
 ```
 
+## Documentation API (Swagger / OpenAPI)
+
+Une fois l'application démarrée, la documentation interactive est disponible sur
+`http://localhost:<SERVER_PORT>/swagger-ui/index.html` (le JSON brut OpenAPI 3 sur
+`/v3/api-docs`). Générée via `springdoc-openapi-starter-webmvc-ui`
+([`OpenApiConfig`](src/main/java/com/platform/common/config/OpenApiConfig.java)) à partir des
+annotations `@Tag`/`@Operation` posées sur chaque contrôleur — un tag par module métier
+(Authentification, MFA, Utilisateurs, Organisations, Campagnes, Tâches, Participations,
+Soumissions, Validation, Portefeuille, Paiements (dépôts), Moyens de paiement, Retraits,
+Anti-fraude, Administration, Statistiques). Les chemins `/swagger-ui/**` et `/v3/api-docs/**`
+sont publics (`permitAll`, cf. `SecurityConfig`) : utilisez le bouton "Authorize" avec
+l'`accessToken` reçu de `POST /api/v1/auth/login` pour tester les endpoints protégés directement
+depuis l'interface.
+
 ## Démarrer sans Docker pour l'app (PostgreSQL/Redis restent en conteneurs)
 
 ```bash

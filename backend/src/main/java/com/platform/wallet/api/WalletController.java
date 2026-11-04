@@ -6,6 +6,8 @@ import com.platform.wallet.api.dto.WalletTransactionResponse;
 import com.platform.wallet.application.WalletService;
 import com.platform.wallet.domain.Wallet;
 import com.platform.wallet.domain.WalletOwnerType;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -21,6 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
  * read-only on purpose.
  */
 @RestController
+@Tag(name = "Portefeuille", description = "Consultation, en lecture seule, du solde et de l'historique "
+        + "du portefeuille d'un utilisateur ou d'une organisation. Le crédit se fait uniquement via les "
+        + "tags Paiements (dépôts) et Validation (récompenses).")
 public class WalletController {
 
     private final WalletService walletService;
@@ -31,23 +36,27 @@ public class WalletController {
         this.organizationService = organizationService;
     }
 
+    @Operation(summary = "Consulter mon portefeuille")
     @GetMapping("/api/v1/wallet/me")
     public WalletResponse myWallet(Authentication authentication) {
         return WalletResponse.of(walletService.getOrCreateWallet(WalletOwnerType.USER, currentUserId(authentication)));
     }
 
+    @Operation(summary = "Consulter l'historique de mon portefeuille")
     @GetMapping("/api/v1/wallet/me/transactions")
     public List<WalletTransactionResponse> myTransactions(Authentication authentication) {
         Wallet wallet = walletService.getOrCreateWallet(WalletOwnerType.USER, currentUserId(authentication));
         return walletService.listTransactions(wallet.getId()).stream().map(WalletTransactionResponse::of).toList();
     }
 
+    @Operation(summary = "Consulter le portefeuille d'une organisation", description = "Réservé aux membres actifs.")
     @GetMapping("/api/v1/organizations/{organizationId}/wallet")
     public WalletResponse organizationWallet(Authentication authentication, @PathVariable UUID organizationId) {
         organizationService.assertActiveMembership(organizationId, currentUserId(authentication));
         return WalletResponse.of(walletService.getOrCreateWallet(WalletOwnerType.ORGANIZATION, organizationId));
     }
 
+    @Operation(summary = "Consulter l'historique du portefeuille d'une organisation", description = "Réservé aux membres actifs.")
     @GetMapping("/api/v1/organizations/{organizationId}/wallet/transactions")
     public List<WalletTransactionResponse> organizationTransactions(Authentication authentication, @PathVariable UUID organizationId) {
         organizationService.assertActiveMembership(organizationId, currentUserId(authentication));
