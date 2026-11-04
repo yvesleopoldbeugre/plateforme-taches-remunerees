@@ -3,6 +3,7 @@ package com.platform.audit.application;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.platform.organizations.domain.event.OrganizationStatusChangedEvent;
+import com.platform.users.domain.event.UserSecurityActionEvent;
 import com.platform.users.domain.event.UserStatusChangedEvent;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -62,6 +63,16 @@ public class AuditLogListener {
                     toJson(before), toJson(after));
         } catch (RuntimeException e) {
             log.warn("Failed to write audit log for organization {} status change", event.organizationId(), e);
+        }
+    }
+
+    /** Phase 12 — MFA enabled/disabled, password reset completed (CDCT §8, "toute action sensible"). */
+    @EventListener
+    public void onUserSecurityAction(UserSecurityActionEvent event) {
+        try {
+            auditService.record(event.actorId(), event.action(), "USER", event.userId(), null, null);
+        } catch (RuntimeException e) {
+            log.warn("Failed to write audit log for user {} security action {}", event.userId(), event.action(), e);
         }
     }
 

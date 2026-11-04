@@ -23,4 +23,9 @@ public class LoggingVerificationNotifier implements VerificationNotifier {
     public void sendPhoneOtp(String phone, String code) {
         log.info("[DEV] SMS OTP for {} -> code={}", phone, code);
     }
+
+    @Override
+    public void sendPasswordResetEmail(String email, String token) {
+        log.info("[DEV] Password reset link for {} -> token={}", email, token);
+    }
 }

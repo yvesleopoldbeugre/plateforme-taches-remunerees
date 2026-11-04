@@ -67,6 +67,12 @@ public class OrganizationService {
         return memberRepository.findByUserId(userId);
     }
 
+    /** Phase 12 — CDCT §8: MFA is mandatory for an {@code ORGANIZATION_OWNER}, checked by {@code auth}. */
+    public boolean isOwnerOfAnyActiveOrganization(UUID userId) {
+        return memberRepository.findByUserId(userId).stream()
+                .anyMatch(member -> member.getRole() == OrganizationRole.OWNER && member.isActive());
+    }
+
     @Transactional
     public OrganizationMember inviteMember(UUID organizationId, UUID inviterUserId, String inviteeEmail) {
         assertRole(organizationId, inviterUserId, OrganizationRole.OWNER);

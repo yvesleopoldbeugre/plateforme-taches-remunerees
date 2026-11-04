@@ -3,7 +3,11 @@
 Monolithe modulaire Spring Boot (Java 21), conforme à l'architecture décrite dans le
 [Dossier d'Architecture Technique](../docs/06-DAT-Dossier-Architecture-Technique.docx) (§7-8).
 
-## État actuel : Phase 11 — Statistiques (MVP complet, les 11 phases de la roadmap sont closes)
+## État actuel : Phase 12 — Sécurité des comptes (au-delà des 11 phases de la roadmap du DAT)
+
+Les 11 phases du DAT sont closes depuis la Phase 11. Les phases suivantes (12+) traitent, une
+par une et dans un ordre proposé puis validé, les points explicitement reportés documentés
+phase par phase ci-dessous.
 
 Phase 1 (architecture et base technique) :
 
@@ -39,9 +43,9 @@ Phase 2 (authentification et utilisateurs) :
 - Endpoints : `POST /api/v1/auth/{register,login,refresh,logout,verify-email,
   verify-email/resend,verify-phone,verify-phone/resend}`.
 
-Explicitement reporté (hors MVP à ce stade) : MFA/TOTP (prévu pour PLATFORM_ADMIN/OPERATOR/
-ORGANIZATION_OWNER, cf. CDCT §8), réinitialisation de mot de passe, révocation de toutes les
-sessions d'un coup, bootstrap d'un premier compte PLATFORM_ADMIN.
+Explicitement reporté (hors MVP à ce stade) à l'époque : MFA/TOTP, réinitialisation de mot de
+passe, révocation de toutes les sessions d'un coup — soldés en Phase 12, voir plus bas. Soldé
+en Phase 9 : bootstrap d'un premier compte PLATFORM_ADMIN.
 
 Phase 3 (organisations) :
 
@@ -477,16 +481,93 @@ Phase 11 (statistiques) — module `statistics` (`OrganizationStatisticsService`
   validationRate 1.0, revenu utilisateur = récompense exacte, volume financier plateforme =
   dépôt + récompense).
 
-Explicitement reporté : rien de nouveau — cette phase clôt la roadmap en 11 phases du DAT. Les
-reports accumulés au fil des phases restent documentés chacun dans sa propre section : MFA/TOTP
-et réinitialisation de mot de passe (Phase 2), le vrai `PaymentProvider` async (Phase 8), le KYC
-documentaire utilisateur (Phases 8-9), BR-050/litiges (Phase 10), et quelques autres — voir
-chaque section ci-dessus pour le détail et la raison de chacun.
+Explicitement reporté à l'époque : MFA/TOTP et réinitialisation de mot de passe (Phase 2) —
+soldés en Phase 12, voir plus bas. Toujours reporté : litiges/UC-15, BR-044, BR-050, KYC
+utilisateur, le vrai `PaymentProvider` async — chacun documenté dans sa propre section
+ci-dessus, et pour certains déjà planifiés pour une phase suivante (voir plus bas).
 
-Pas encore implémenté : rien dans le périmètre des 11 phases. Ce qui reste explicitement hors
-MVP (litiges/UC-15, BR-044, BR-050, KYC utilisateur, MFA, réinitialisation de mot de passe,
-provider de paiement réel) est listé phase par phase ci-dessus, pas cette ligne — contrairement
-aux dix phases précédentes, il n'y a plus de "phase suivante" où les reporter.
+Pas encore implémenté dans le périmètre des 11 phases du DAT : rien — la roadmap elle-même est
+close depuis cette phase. Ce qui suit (Phase 12+) reprend, une par une, les points reportés au
+fil des 11 phases.
+
+---
+
+## Au-delà des 11 phases du DAT
+
+Les phases suivantes n'ont pas de numéro dans la roadmap d'origine — elles reprennent,
+phase par phase et dans un ordre proposé par l'assistant puis validé par le porteur de
+projet, les points explicitement reportés ci-dessus. Ordre retenu : (12) sécurité des
+comptes, (13) compléments cycle de vie des campagnes, (14) litiges, (15) KYC utilisateur,
+(16) anti-fraude BR-050, (17) wallet/paiements compléments financiers, (18) administration —
+durcissement.
+
+Phase 12 (sécurité des comptes) — MFA/TOTP, réinitialisation de mot de passe, révocation
+globale des sessions (CDCT §8) :
+
+- **MFA/TOTP** (`TotpService`, `MfaService`, `Base32Codec`) : RFC 6238 (HMAC-SHA1, 6 chiffres,
+  pas de 30s) implémenté à la main (~20 lignes de `javax.crypto`, même esprit que le SHA-256
+  fait main de `SubmissionService` pour BR-051) — aucune nouvelle dépendance Maven. Pas de
+  Base32 non plus dans `java.util.Base64` : un petit codec RFC 4648 maison
+  (`Base32Codec`, package-privé).
+  - `POST /auth/mfa/setup` (Bearer) génère un secret et l'enregistre (`mfa_enabled` reste faux
+    tant que non confirmé) ; `POST /auth/mfa/enable` confirme avec un code TOTP ;
+    `POST /auth/mfa/disable` désactive, sauf si le rôle rend le MFA obligatoire (voir plus bas).
+  - Connexion à deux temps quand `mfa_enabled` est vrai : `POST /auth/login` ne renvoie plus de
+    jetons mais `{mfaRequired:true, mfaChallengeToken}` (jeton Redis, 5 min, même discipline que
+    les jetons de `VerificationService`) ; `POST /auth/mfa/login-verify` termine la connexion.
+    **Un code faux ne consomme pas le challenge** — bug trouvé et corrigé en écrivant cette
+    phase : la première version consommait (supprimait) le jeton Redis avant même de vérifier
+    le code, donc une faute de frappe sur le code forçait à tout recommencer (mot de passe
+    inclus). Corrigé en ne consommant le challenge qu'après un code valide
+    (`MfaService#peekLoginChallenge` + `invalidateLoginChallenge`, plutôt qu'un
+    `consumeLoginChallenge` unique) — détecté par le test automatisé, pas en vérification
+    manuelle.
+  - **"Obligatoire pour PLATFORM_ADMIN/OPERATOR/ORGANIZATION_OWNER" (CDCT §8) est appliqué
+    comme une forte incitation, pas un verrou technique dur** : un compte dont le rôle l'exige
+    peut toujours se connecter normalement sans MFA activé (son `refresh_token` existant doit
+    continuer à fonctionner), mais la réponse porte `mfaSetupRecommended:true`, et une fois le
+    MFA activé, il ne peut plus être désactivé pour ce rôle (`MFA_MANDATORY_FOR_ROLE`). Un vrai
+    verrou dur (bloquer la connexion tant que l'enrôlement n'est pas terminé) demanderait un état
+    de session intermédiaire restreint — un renforcement raisonnable laissé pour plus tard,
+    disproportionné pour le périmètre de cette phase. `MfaService` dépend de `organizations`
+    (nouvelle dépendance à sens unique `auth` → `organizations`, sans cycle) uniquement pour
+    savoir si l'utilisateur est `OWNER` d'au moins une organisation active.
+  - **Aucune récupération en cas de perte de l'appareil d'authentification** (pas de codes de
+    secours — explicitement hors scope) : constaté en écrivant cette phase en se verrouillant
+    soi-même un compte admin de test pendant la vérification manuelle, débloqué par une mise à
+    jour SQL directe sur `mfa_enabled`/`mfa_secret`. En production, ce serait un vrai incident —
+    documenté ici comme limitation connue, pas comme un bug.
+- **Réinitialisation de mot de passe** (`PasswordResetService`) : même discipline Redis que la
+  vérification email (jeton à usage unique, 1h, jamais persisté en base), aucune fuite
+  d'existence de compte (`requestReset` répond pareil que l'email existe ou non). La
+  confirmation **révoque aussi toutes les sessions existantes** — le moment exact où un
+  éventuel jeton de rafraîchissement déjà volé doit cesser de fonctionner.
+- **Révocation de toutes les sessions d'un coup** (`RefreshTokenService#revokeAllForUser`) :
+  un index inverse Redis (`refresh-tokens-by-user:{userId}`, un `SET`) ajouté à la gestion déjà
+  existante des jetons de rafraîchissement — `POST /auth/sessions/revoke-all` (self-service).
+  **Branché aussi automatiquement sur la suspension/bannissement** : `SessionRevocationListener`
+  écoute `UserStatusChangedEvent` (déjà publié depuis la Phase 9) et révoque toutes les sessions
+  dès qu'un compte passe `SUSPENDED`/`BANNED` — jusqu'ici, le jeton d'accès déjà émis (≤15 min)
+  restait valide jusqu'à expiration naturelle même après suspension, puisqu'un JWT n'est jamais
+  revérifié en base par requête ; ça reste vrai pour la fenêtre de 15 minutes, mais les sessions
+  ne peuvent plus être renouvelées immédiatement.
+- MFA activé/désactivé et mot de passe réinitialisé publient `UserSecurityActionEvent`, écouté
+  par `audit` (même direction que `UserStatusChangedEvent`/`OrganizationStatusChangedEvent`).
+- `V9__add_user_mfa_secret.sql` ajoute la colonne manquante (`mfa_enabled` existait depuis la
+  V1, jamais le secret lui-même).
+- **Testé par `SecurityTest`** (6 cas) — premier test du projet qui a réellement besoin de
+  Redis joignable : toutes les phases précédentes contournaient sans le savoir les chemins de
+  code d'`auth` qui touchent Redis. Un conteneur Redis générique (`GenericContainer`, pas de
+  nouvelle dépendance Maven) rejoint le PostgreSQL déjà présent. Les 40 tests du projet passent.
+  Vérifié aussi par curl en local et dans le conteneur Docker reconstruit (avec un générateur
+  TOTP Python indépendant pour calculer de vrais codes RFC 6238 — setup → code faux refusé →
+  code juste accepté → connexion à deux temps avec un code faux qui ne casse pas le challenge
+  → mot de passe réinitialisé avec révocation de session vérifiée → révocation globale
+  vérifiée → suspension déclenchant la révocation automatiquement).
+
+Explicitement reporté : codes de secours MFA (cf. ci-dessus) ; verrou dur de connexion pour les
+rôles à MFA obligatoire (cf. ci-dessus) ; écran de gestion MFA pour un admin au nom d'un autre
+utilisateur (seul le self-service existe).
 
 ## Prérequis
 

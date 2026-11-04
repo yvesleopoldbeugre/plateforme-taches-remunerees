@@ -6,6 +6,7 @@ import com.platform.users.domain.PlatformRole;
 import com.platform.users.domain.User;
 import com.platform.users.domain.UserProfile;
 import com.platform.users.domain.UserStatus;
+import com.platform.users.domain.event.UserSecurityActionEvent;
 import com.platform.users.domain.event.UserStatusChangedEvent;
 import com.platform.users.infrastructure.UserProfileRepository;
 import com.platform.users.infrastructure.UserRepository;
@@ -122,6 +123,39 @@ public class UserService {
     public User grantPlatformRole(UUID userId, PlatformRole role) {
         User user = getById(userId);
         user.grantPlatformRole(role);
+        return user;
+    }
+
+    /** Phase 12 — MFA (CDCT §8). All three security-mutation methods below publish
+     *  {@link UserSecurityActionEvent} so {@code audit} records them, same as status changes. */
+    @Transactional
+    public User beginMfaEnrollment(UUID userId, String secret) {
+        User user = getById(userId);
+        user.beginMfaEnrollment(secret);
+        return user;
+    }
+
+    @Transactional
+    public User confirmMfaEnabled(UUID userId) {
+        User user = getById(userId);
+        user.confirmMfaEnabled();
+        eventPublisher.publishEvent(new UserSecurityActionEvent(userId, userId, "MFA_ENABLED"));
+        return user;
+    }
+
+    @Transactional
+    public User disableMfa(UUID userId) {
+        User user = getById(userId);
+        user.disableMfa();
+        eventPublisher.publishEvent(new UserSecurityActionEvent(userId, userId, "MFA_DISABLED"));
+        return user;
+    }
+
+    @Transactional
+    public User updatePasswordHash(UUID userId, String passwordHash) {
+        User user = getById(userId);
+        user.updatePasswordHash(passwordHash);
+        eventPublisher.publishEvent(new UserSecurityActionEvent(userId, userId, "PASSWORD_RESET_COMPLETED"));
         return user;
     }
 }

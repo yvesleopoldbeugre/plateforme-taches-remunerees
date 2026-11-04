@@ -10,4 +10,7 @@ public interface VerificationNotifier {
     void sendEmailVerification(String email, String token);
 
     void sendPhoneOtp(String phone, String code);
+
+    /** Phase 12 — password reset request (CDCT §8). */
+    void sendPasswordResetEmail(String email, String token);
 }

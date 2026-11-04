@@ -24,6 +24,16 @@ Marketplace de micro-tâches et de campagnes rémunérées (MVP), contexte Afriq
 - [x] Phase 10 — Anti-fraude
 - [x] Phase 11 — Statistiques
 
-Les 11 phases de la roadmap du DAT sont closes — voir [`backend/README.md`](backend/README.md)
-pour le détail phase par phase et ce qui reste explicitement hors scope du MVP (litiges, MFA,
-BR-044, BR-050, KYC utilisateur, provider de paiement réel...).
+Les 11 phases de la roadmap du DAT sont closes. Le projet continue au-delà, phase par phase,
+sur les points qui avaient été explicitement reportés :
+
+- [x] Phase 12 — Sécurité des comptes (MFA/TOTP, réinitialisation de mot de passe, révocation
+  des sessions)
+- [ ] Phase 13 — Compléments cycle de vie des campagnes
+- [ ] Phase 14 — Litiges (UC-15)
+- [ ] Phase 15 — KYC utilisateur
+- [ ] Phase 16 — Anti-fraude BR-050
+- [ ] Phase 17 — Wallet et paiements (compléments financiers)
+- [ ] Phase 18 — Administration (durcissement)
+
+Voir [`backend/README.md`](backend/README.md) pour le détail phase par phase.

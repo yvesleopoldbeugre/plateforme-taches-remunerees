@@ -47,6 +47,9 @@ public class User {
     @Column(name = "mfa_enabled", nullable = false)
     private boolean mfaEnabled = false;
 
+    @Column(name = "mfa_secret", length = 64)
+    private String mfaSecret;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -122,6 +125,33 @@ public class User {
         this.updatedAt = Instant.now();
     }
 
+    /** CDCT §8 — TOTP. The secret is stored but {@code mfaEnabled} stays false until a code is
+     *  actually confirmed ({@link #confirmMfaEnabled()}) — a user who starts setup and never
+     *  finishes it is not protected by anything, and must not be made to look like they are. */
+    public void beginMfaEnrollment(String secret) {
+        this.mfaSecret = secret;
+        this.updatedAt = Instant.now();
+    }
+
+    public void confirmMfaEnabled() {
+        if (mfaSecret == null) {
+            throw new ConflictException("MFA_NOT_SETUP", "Lancez l'enrôlement MFA avant de le confirmer.");
+        }
+        this.mfaEnabled = true;
+        this.updatedAt = Instant.now();
+    }
+
+    public void disableMfa() {
+        this.mfaEnabled = false;
+        this.mfaSecret = null;
+        this.updatedAt = Instant.now();
+    }
+
+    public void updatePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }
@@ -156,6 +186,10 @@ public class User {
 
     public boolean isMfaEnabled() {
         return mfaEnabled;
+    }
+
+    public String getMfaSecret() {
+        return mfaSecret;
     }
 
     public Instant getCreatedAt() {

@@ -39,6 +39,12 @@ public class SecurityConfig {
                                 "/api/v1/auth/logout",
                                 "/api/v1/auth/verify-email",
                                 "/api/v1/auth/verify-email/resend",
+                                // Phase 12 — no Bearer token exists yet at any of these three
+                                // points (mid-MFA-login, and the password-reset request/confirm
+                                // pair, both deliberately pre-authentication by design).
+                                "/api/v1/auth/mfa/login-verify",
+                                "/api/v1/auth/password-reset/request",
+                                "/api/v1/auth/password-reset/confirm",
                                 // Phase 9 — no admin exists yet to authenticate as; gated instead
                                 // by a shared secret and "only while no PLATFORM_ADMIN exists"
                                 // (see AdminBootstrapService).

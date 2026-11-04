@@ -1,14 +1,21 @@
 package com.platform.auth.api;
 
 import com.platform.auth.api.dto.LoginRequest;
+import com.platform.auth.api.dto.MfaChallengeResponse;
+import com.platform.auth.api.dto.PasswordResetConfirmRequest;
+import com.platform.auth.api.dto.PasswordResetRequestRequest;
 import com.platform.auth.api.dto.RefreshTokenRequest;
 import com.platform.auth.api.dto.RegisterRequest;
 import com.platform.auth.api.dto.RegisterResponse;
 import com.platform.auth.api.dto.ResendEmailRequest;
+import com.platform.auth.api.dto.SessionsRevokedResponse;
 import com.platform.auth.api.dto.TokenResponse;
 import com.platform.auth.api.dto.VerifyEmailRequest;
 import com.platform.auth.api.dto.VerifyPhoneRequest;
 import com.platform.auth.application.LoginService;
+import com.platform.auth.application.LoginService.LoginResult;
+import com.platform.auth.application.PasswordResetService;
+import com.platform.auth.application.RefreshTokenService;
 import com.platform.auth.application.RegisterService;
 import com.platform.auth.application.VerificationService;
 import com.platform.users.application.UserService;
@@ -31,13 +38,18 @@ public class AuthController {
     private final LoginService loginService;
     private final VerificationService verificationService;
     private final UserService userService;
+    private final PasswordResetService passwordResetService;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthController(RegisterService registerService, LoginService loginService,
-                           VerificationService verificationService, UserService userService) {
+                           VerificationService verificationService, UserService userService,
+                           PasswordResetService passwordResetService, RefreshTokenService refreshTokenService) {
         this.registerService = registerService;
         this.loginService = loginService;
         this.verificationService = verificationService;
         this.userService = userService;
+        this.passwordResetService = passwordResetService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @PostMapping("/register")
@@ -47,9 +59,15 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(RegisterResponse.of(user));
     }
 
+    /** Returns a {@link TokenResponse} normally, or a {@link MfaChallengeResponse} when the
+     *  account has MFA enabled — see {@code LoginService}'s javadoc for the two-step flow. */
     @PostMapping("/login")
-    public TokenResponse login(@Valid @RequestBody LoginRequest request) {
-        return TokenResponse.of(loginService.login(request.email(), request.password()));
+    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+        LoginResult result = loginService.login(request.email(), request.password());
+        if (result.mfaRequired()) {
+            return ResponseEntity.ok(new MfaChallengeResponse(true, result.mfaChallengeToken()));
+        }
+        return ResponseEntity.ok(TokenResponse.of(result));
     }
 
     @PostMapping("/refresh")
@@ -61,6 +79,27 @@ public class AuthController {
     public ResponseEntity<Void> logout(@Valid @RequestBody RefreshTokenRequest request) {
         loginService.logout(request.refreshToken());
         return ResponseEntity.noContent().build();
+    }
+
+    /** "Révocation de toutes les sessions d'un coup" (deferred since Phase 2) — the current
+     *  session's own access token keeps working until it naturally expires (≤15 min); only
+     *  refresh tokens are revoked, so every *other* session stops being renewable immediately. */
+    @PostMapping("/sessions/revoke-all")
+    public SessionsRevokedResponse revokeAllSessions(Authentication authentication) {
+        int revoked = refreshTokenService.revokeAllForUser(currentUserId(authentication));
+        return new SessionsRevokedResponse(revoked);
+    }
+
+    @PostMapping("/password-reset/request")
+    public ResponseEntity<Void> requestPasswordReset(@Valid @RequestBody PasswordResetRequestRequest request) {
+        passwordResetService.requestReset(request.email());
+        return ResponseEntity.accepted().build();
+    }
+
+    @PostMapping("/password-reset/confirm")
+    public ResponseEntity<Void> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmRequest request) {
+        passwordResetService.confirmReset(request.token(), request.newPassword());
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/verify-email")
