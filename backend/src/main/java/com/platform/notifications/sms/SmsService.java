@@ -1,5 +1,7 @@
 package com.platform.notifications.sms;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,11 +11,11 @@ import org.springframework.web.client.RestClientException;
 
 /**
  * Raw SMS transport via Djosend (same gateway/account as the mon-point project), using
- * {@code POST /api/v1/messages} with {@code senderNameId} — the current, non-deprecated way to
- * pick a sender (the legacy {@code /api/v1/sms/messages} + {@code senderName} string route
- * ignores the sender name and falls back to Djosend's own default). {@code senderNameId} is the
- * UUID of a sender name already created and approved in the Djosend merchant portal (see
- * {@code GET /api/v1/sender-names}) — "MONPOINTCI" here, shared with the mon-point project.
+ * {@code POST /api/v1/messages} — the current, non-deprecated endpoint (the legacy
+ * {@code /api/v1/sms/messages} + {@code senderName} string route is deprecated and ignores the
+ * sender name). {@code senderNameId} (UUID of a sender name approved in the Djosend merchant
+ * portal, see {@code GET /api/v1/sender-names}) is omitted from the request when blank, which
+ * falls back to Djosend's own default sender ("Djosend").
  *
  * Phone numbers are already stored in E.164 (see RegisterRequest), so no normalization is needed.
  * A send failure is logged, never rethrown — SMS delivery must not block the auth flow that
@@ -37,17 +39,21 @@ public class SmsService {
     }
 
     public void send(String to, String body) {
+        Map<String, String> request = new LinkedHashMap<>();
+        request.put("channel", "sms");
+        request.put("to", to);
+        request.put("body", body);
+        if (senderNameId != null && !senderNameId.isBlank()) {
+            request.put("senderNameId", senderNameId);
+        }
         try {
             restClient.post()
                     .header("X-API-Key", apiKey)
-                    .body(new SmsRequest("sms", to, body, senderNameId))
+                    .body(request)
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException e) {
             log.error("Échec d'envoi de SMS à {}: {}", to, e.getMessage());
         }
-    }
-
-    private record SmsRequest(String channel, String to, String body, String senderNameId) {
     }
 }
