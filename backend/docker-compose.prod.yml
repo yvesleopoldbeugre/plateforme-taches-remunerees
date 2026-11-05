@@ -49,7 +49,7 @@ services:
       MAIL_PASSWORD: ${MAIL_PASSWORD:-}
       MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Plateforme de Tâches Rémunérées}
       SMS_API_KEY: ${SMS_API_KEY:-}
-      SMS_SENDER_ID: ${SMS_SENDER_ID:-MONPOINTCI}
+      SMS_SENDER_NAME_ID: ${SMS_SENDER_NAME_ID:-}
     depends_on:
       postgres:
         condition: service_healthy

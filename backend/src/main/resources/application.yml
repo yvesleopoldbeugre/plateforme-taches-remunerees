@@ -75,11 +75,13 @@ notifications:
 mail:
   from-name: ${MAIL_FROM_NAME:Plateforme de Tâches Rémunérées}
 
-# Djosend — même compte/API que le projet mon-point (SMS_SENDER_ID partagé).
+# Djosend — même compte/API que le projet mon-point. sender-name-id est l'UUID du sender name
+# "MONPOINTCI" déjà créé et approuvé dans le portail Djosend (GET /api/v1/sender-names) ; le
+# champ senderName (string) de l'ancienne route /sms/messages est déprécié et ignoré par l'API.
 sms:
-  base-url: ${SMS_BASE_URL:https://api.djosend.com/api/v1/sms/messages}
+  base-url: ${SMS_BASE_URL:https://api.djosend.com/api/v1/messages}
   api-key: ${SMS_API_KEY:}
-  sender-id: ${SMS_SENDER_ID:}
+  sender-name-id: ${SMS_SENDER_NAME_ID:}
 
 management:
   endpoints:

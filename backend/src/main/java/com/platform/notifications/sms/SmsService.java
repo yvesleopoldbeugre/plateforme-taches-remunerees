@@ -8,9 +8,16 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 /**
- * Raw SMS transport via Djosend (same gateway/account as the mon-point project). Phone numbers
- * are already stored in E.164 (see RegisterRequest), so no normalization is needed here. A send
- * failure is logged, never rethrown — SMS delivery must not block the auth flow that triggered it.
+ * Raw SMS transport via Djosend (same gateway/account as the mon-point project), using
+ * {@code POST /api/v1/messages} with {@code senderNameId} — the current, non-deprecated way to
+ * pick a sender (the legacy {@code /api/v1/sms/messages} + {@code senderName} string route
+ * ignores the sender name and falls back to Djosend's own default). {@code senderNameId} is the
+ * UUID of a sender name already created and approved in the Djosend merchant portal (see
+ * {@code GET /api/v1/sender-names}) — "MONPOINTCI" here, shared with the mon-point project.
+ *
+ * Phone numbers are already stored in E.164 (see RegisterRequest), so no normalization is needed.
+ * A send failure is logged, never rethrown — SMS delivery must not block the auth flow that
+ * triggered it.
  */
 @Service
 public class SmsService {
@@ -19,21 +26,21 @@ public class SmsService {
 
     private final RestClient restClient;
     private final String apiKey;
-    private final String senderId;
+    private final String senderNameId;
 
-    public SmsService(@Value("${sms.base-url:https://api.djosend.com/api/v1/sms/messages}") String baseUrl,
+    public SmsService(@Value("${sms.base-url:https://api.djosend.com/api/v1/messages}") String baseUrl,
                        @Value("${sms.api-key:}") String apiKey,
-                       @Value("${sms.sender-id:}") String senderId) {
+                       @Value("${sms.sender-name-id:}") String senderNameId) {
         this.restClient = RestClient.builder().baseUrl(baseUrl).build();
         this.apiKey = apiKey;
-        this.senderId = senderId;
+        this.senderNameId = senderNameId;
     }
 
     public void send(String to, String body) {
         try {
             restClient.post()
                     .header("X-API-Key", apiKey)
-                    .body(new SmsRequest(to, body, senderId))
+                    .body(new SmsRequest("sms", to, body, senderNameId))
                     .retrieve()
                     .toBodilessEntity();
         } catch (RestClientException e) {
@@ -41,6 +48,6 @@ public class SmsService {
         }
     }
 
-    private record SmsRequest(String to, String body, String senderName) {
+    private record SmsRequest(String channel, String to, String body, String senderNameId) {
     }
 }

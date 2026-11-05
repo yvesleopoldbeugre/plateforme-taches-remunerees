@@ -622,7 +622,7 @@ Variables à renseigner dans ce cas (voir `.env.prod.example`) :
 | --- | --- |
 | `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Compte SMTP (réutilise celui du projet note-ta-boite — `mail.notetaboite.com:465`) |
 | `MAIL_FROM_NAME` | Nom affiché comme expéditeur (distinct de note-ta-boite) |
-| `SMS_API_KEY`, `SMS_SENDER_ID` | Compte Djosend (réutilise celui du projet mon-point) |
+| `SMS_API_KEY`, `SMS_SENDER_NAME_ID` | Compte Djosend (réutilise celui du projet mon-point) — `SMS_SENDER_NAME_ID` est l'UUID du sender name "MONPOINTCI" (`GET /api/v1/sender-names`), pas son nom en clair : le champ `senderName` string de l'ancienne route est déprécié et ignoré par l'API |
 
 Un échec d'envoi (SMTP ou SMS en panne) est loggé mais ne fait jamais échouer le flux appelant
 (inscription, connexion, mot de passe oublié) — l'envoi est un effet secondaire, pas une
