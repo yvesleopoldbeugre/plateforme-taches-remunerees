@@ -603,6 +603,31 @@ sont publics (`permitAll`, cf. `SecurityConfig`) : utilisez le bouton "Authorize
 l'`accessToken` reçu de `POST /api/v1/auth/login` pour tester les endpoints protégés directement
 depuis l'interface.
 
+## Notifications réelles (email / SMS)
+
+`VerificationNotifier` (vérification email, OTP téléphone, réinitialisation de mot de passe) a
+deux implémentations, sélectionnées par `notifications.enabled` :
+
+- `NOTIFICATIONS_ENABLED=false` (défaut — dev/tests) : `LoggingVerificationNotifier` se contente
+  de logger le token/code, aucun envoi réel. C'est pour ça que les tests et `mvn spring-boot:run`
+  local n'ont besoin d'aucune config SMTP/SMS.
+- `NOTIFICATIONS_ENABLED=true` : `MailSmsVerificationNotifier` envoie pour de vrai, via
+  [`MailService`](src/main/java/com/platform/notifications/mail/MailService.java) (SMTP,
+  `spring-boot-starter-mail`) et
+  [`SmsService`](src/main/java/com/platform/notifications/sms/SmsService.java) (API Djosend).
+
+Variables à renseigner dans ce cas (voir `.env.prod.example`) :
+
+| Variable | Rôle |
+| --- | --- |
+| `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD` | Compte SMTP (réutilise celui du projet note-ta-boite — `mail.notetaboite.com:465`) |
+| `MAIL_FROM_NAME` | Nom affiché comme expéditeur (distinct de note-ta-boite) |
+| `SMS_API_KEY`, `SMS_SENDER_ID` | Compte Djosend (réutilise celui du projet mon-point) |
+
+Un échec d'envoi (SMTP ou SMS en panne) est loggé mais ne fait jamais échouer le flux appelant
+(inscription, connexion, mot de passe oublié) — l'envoi est un effet secondaire, pas une
+condition de succès de ces opérations.
+
 ## Démarrer sans Docker pour l'app (PostgreSQL/Redis restent en conteneurs)
 
 ```bash

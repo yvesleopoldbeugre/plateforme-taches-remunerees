@@ -17,6 +17,8 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    networks:
+      - internal
 
   redis:
     image: redis:7-alpine
@@ -26,11 +28,11 @@ services:
       timeout: 5s
       retries: 10
     restart: unless-stopped
+    networks:
+      - internal
 
   app:
     image: ghcr.io/yvesleopoldbeugre/plateforme-taches-remunerees-backend:${IMAGE_TAG:-latest}
-    ports:
-      - "${APP_PORT:-8080}:8080"
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/plateforme_taches
       DB_USERNAME: platform
@@ -40,12 +42,38 @@ services:
       SERVER_PORT: 8080
       JWT_SECRET: ${JWT_SECRET}
       ADMIN_BOOTSTRAP_SECRET: ${ADMIN_BOOTSTRAP_SECRET:-}
+      NOTIFICATIONS_ENABLED: ${NOTIFICATIONS_ENABLED:-false}
+      MAIL_HOST: ${MAIL_HOST:-mail.notetaboite.com}
+      MAIL_PORT: ${MAIL_PORT:-465}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-Plateforme de Tâches Rémunérées}
+      SMS_API_KEY: ${SMS_API_KEY:-}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-MONPOINTCI}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - internal
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-public"
+      - "traefik.http.routers.task-platform.rule=Host(`task.notetaboite.com`)"
+      - "traefik.http.routers.task-platform.entrypoints=websecure"
+      - "traefik.http.routers.task-platform.tls=true"
+      - "traefik.http.routers.task-platform.tls.certresolver=letsencrypt"
+      - "traefik.http.services.task-platform.loadbalancer.server.port=8080"
 
 volumes:
   postgres_data:
+
+networks:
+  internal:
+    driver: bridge
+  # Réseau du Traefik déjà déployé sur le VPS (créé hors de ce compose).
+  traefik-public:
+    external: true

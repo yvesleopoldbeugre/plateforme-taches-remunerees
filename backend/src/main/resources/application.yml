@@ -28,6 +28,23 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
 
+  # SMTP transport for MailService — only actually used when notifications.enabled=true.
+  # Same mailbox/account as the note-ta-boite project (shared SMTP, distinct From name below).
+  mail:
+    host: ${MAIL_HOST:mail.notetaboite.com}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+            # Certificat mutualisé LWS (*.lwspanel.com) ≠ host SMTP — même limitation que
+            # MAIL_VERIFY_PEER=false côté note-ta-boite.
+            trust: ${MAIL_HOST:mail.notetaboite.com}
+
 server:
   port: ${SERVER_PORT:8080}
 
@@ -49,6 +66,20 @@ platform:
     # AdminBootstrapService. Set it once in the target environment, bootstrap the first
     # PLATFORM_ADMIN, then rotate/unset it; the endpoint also self-disables once any admin exists.
     bootstrap-secret: ${ADMIN_BOOTSTRAP_SECRET:}
+
+# Real email/SMS off by default (LoggingVerificationNotifier) so local dev and tests never
+# depend on a live SMTP/SMS account. Set to true only where MAIL_*/SMS_* below are configured.
+notifications:
+  enabled: ${NOTIFICATIONS_ENABLED:false}
+
+mail:
+  from-name: ${MAIL_FROM_NAME:Plateforme de Tâches Rémunérées}
+
+# Djosend — même compte/API que le projet mon-point (SMS_SENDER_ID partagé).
+sms:
+  base-url: ${SMS_BASE_URL:https://api.djosend.com/api/v1/sms/messages}
+  api-key: ${SMS_API_KEY:}
+  sender-id: ${SMS_SENDER_ID:}
 
 management:
   endpoints:

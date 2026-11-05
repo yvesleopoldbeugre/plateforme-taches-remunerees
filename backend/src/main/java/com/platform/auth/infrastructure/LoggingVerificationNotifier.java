@@ -3,13 +3,16 @@ package com.platform.auth.infrastructure;
 import com.platform.auth.application.VerificationNotifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
  * Dev-stage stand-in for the real email/SMS providers. Logs instead of sending, so the
- * register → verify flow is testable end-to-end before the notifications module exists.
+ * register → verify flow is testable end-to-end everywhere {@code notifications.enabled} isn't
+ * explicitly turned on — see {@link MailSmsVerificationNotifier} for the real adapter.
  */
 @Component
+@ConditionalOnProperty(prefix = "notifications", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class LoggingVerificationNotifier implements VerificationNotifier {
 
     private static final Logger log = LoggerFactory.getLogger(LoggingVerificationNotifier.class);
